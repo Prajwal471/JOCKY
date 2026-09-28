@@ -70,3 +70,28 @@ SAMPLE_LOTL = [
     {"category": "signed-abuse", "vector": "rundll32.exe", "path": r"C:\Windows\System32\rundll32.exe",
      "exploitable": True, "detail": "present and unconstrained"},
 ]
+
+SAMPLE_REGISTRY = [
+    {"hive": "HKCU", "path": r"HKCU\Software\Microsoft\Windows\CurrentVersion\Run",
+     "name": "VBoxTray", "value": r'"C:\Program Files\Oracle\VirtualBox Guest Additions\VBoxTray.exe"',
+     "value_type": "REG_SZ"},
+    {"hive": "HKLM", "path": r"HKLM\SOFTWARE\Microsoft\Windows\CurrentVersion\Run",
+     "name": "SecurityHealth", "value": r"C:\Windows\system32\SecurityHealthSystray.exe",
+     "value_type": "REG_SZ"},
+    {"hive": "HKLM", "path": r"HKLM\SOFTWARE\Microsoft\Windows NT\CurrentVersion\Winlogon",
+     "name": "Shell", "value": "explorer.exe", "value_type": "REG_SZ"},
+]
+
+SAMPLE_SERVICECONFIG = [
+    {"name": "wuauserv", "display": "Windows Update",
+     "start_type": "AUTO_START", "path": r"C:\Windows\system32\svchost.exe -k netsvcs",
+     "account": "LocalSystem", "binary_path": r"C:\Windows\system32\svchost.exe -k netsvcs"},
+    {"name": "LanmanServer", "display": "Server",
+     "start_type": "AUTO_START", "path": r"C:\Windows\system32\svchost.exe -k netsvcs",
+     "account": "LocalSystem", "binary_path": r"C:\Windows\system32\svchost.exe -k netsvcs"},
+]
+
+SAMPLE_IDENTITY = [
+    {"user": "lab-operator", "domain": "LAB", "sid": "S-1-5-21-1111111111-2222222222-3333333333-1001",
+     "privileges": "none", "hostname": "jocky-lab"},
+]

@@ -139,7 +139,8 @@ def test_domain_registry_fields():
             } or tref.name in {d for d in DOMAIN_REGISTRY}
         assert all(str(c).startswith(("process:", "network:", "service:",
                                       "driver:", "persistence:", "event:",
-                                      "lotl:", "evidence:", "collection:"))
+                                      "lotl:", "evidence:", "collection:",
+                                      "registry:", "identity:"))
                    for c in CAPABILITIES)
 
 

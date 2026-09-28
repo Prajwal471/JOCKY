@@ -68,6 +68,9 @@ from jocky.runtime.builtins import (
     scan_lotl,
     sign_evidence,
     dispatch,
+    probe_registry,
+    probe_service,
+    probe_identity,
 )
 from jocky.runtime.evidence import canonical_bytes
 
@@ -81,6 +84,9 @@ _BUILTIN_FUNCS = {
     "scan_lotl": scan_lotl,
     "sign_evidence": sign_evidence,
     "dispatch": dispatch,
+    "probe_registry": probe_registry,
+    "probe_service": probe_service,
+    "probe_identity": probe_identity,
 }
 
 

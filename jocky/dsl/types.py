@@ -42,6 +42,9 @@ DOMAIN_TYPES = (
     "Evidence",
     "SystemInfo",
     "LotlVector",
+    "RegistryValue",
+    "ServiceConfig",
+    "Identity",
 )
 
 
@@ -68,6 +71,9 @@ FINDING = t("Finding")
 EVIDENCE = t("Evidence")
 SYSTEM_INFO = t("SystemInfo")
 LOTL = t("LotlVector")
+REGISTRY_VALUE = t("RegistryValue")
+SERVICE_CONFIG = t("ServiceConfig")
+IDENTITY = t("Identity")
 
 DOMAIN_REGISTRY: dict[str, dict] = {
     "Process": {
@@ -132,6 +138,24 @@ DOMAIN_REGISTRY: dict[str, dict] = {
             "exploitable": BOOL, "detail": STRING,
         },
     },
+    "RegistryValue": {
+        "fields": {
+            "hive": STRING, "path": STRING, "name": STRING,
+            "value": STRING, "value_type": STRING,
+        },
+    },
+    "ServiceConfig": {
+        "fields": {
+            "name": STRING, "display": STRING, "start_type": STRING,
+            "path": STRING, "account": STRING, "binary_path": STRING,
+        },
+    },
+    "Identity": {
+        "fields": {
+            "user": STRING, "domain": STRING, "sid": STRING,
+            "privileges": STRING, "hostname": STRING,
+        },
+    },
 }
 
 # Capability consumed by each unit of analysis.
@@ -147,6 +171,9 @@ CAPABILITIES = frozenset({
     "lotl:scan",          # local LOTL + privilege-escalation vector scan
     "evidence:sign",      # produce signed evidence records
     "collection:dispatch",  # fan-out to multiple endpoints
+    "registry:query",     # read a named hive key (read-only probe)
+    "service:probe",      # read a named service config (read-only probe)
+    "identity:probe",     # report effective principal/privileges (read-only)
 })
 
 # Capabilities that are *never* granted at compile policy time:

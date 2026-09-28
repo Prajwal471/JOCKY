@@ -76,7 +76,7 @@ def test_run_and_persist_evidence_chain(session):
     assert decisions == {"process:list": "ALLOW", "network:analyze": "ALLOW", "service:list": "ALLOW"}
 
     clauses = session.query(db.CoverageClause).all()
-    assert len(clauses) == 8
+    assert len(clauses) == 11
     assert all(c.status == "LIVE" for c in clauses)
 
 

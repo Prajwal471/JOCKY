@@ -23,6 +23,9 @@ _SEED_NOTES = {
     "event:read": "wevtutil Application+System channels, namespace-agnostic XML",
     "lotl:scan": "local file scan for Living-off-the-Land dual-use binaries",
     "evidence:sign": "per-record Ed25519 signature over canonical hash chain",
+    "registry:query": "winreg OpenKey/EnumValue read of a named hive key",
+    "service:probe": "SCM sc qc read of a named service config",
+    "identity:probe": "whoami /user + effective-privilege probe",
 }
 
 COVERAGE_SEED: list[dict[str, Any]] = [

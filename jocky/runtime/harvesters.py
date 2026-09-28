@@ -556,6 +556,9 @@ __all__ = [
     "event_rows",
     "system_info",
     "lotl_rows",
+    "registry_probe",
+    "service_probe",
+    "identity_probe",
 ]
 
 
@@ -668,3 +671,139 @@ def lotl_rows() -> list[dict[str, Any]]:
             "detail": detail if present else "binary not present on this host",
         })
     return rows
+
+
+# --------------------------------------------------------------------------
+# Self-assertive probes (Block 8): read-only assertions that emit findings
+# into the evidence chain.  All run under the caller's own token.
+# --------------------------------------------------------------------------
+
+
+def _registry_hive(hive_name: str):
+    import winreg
+
+    mapping = {
+        "HKLM": winreg.HKEY_LOCAL_MACHINE,
+        "HKCU": winreg.HKEY_CURRENT_USER,
+        "HKCR": winreg.HKEY_CLASSES_ROOT,
+        "HKU": winreg.HKEY_USERS,
+        "HKCC": winreg.HKEY_CURRENT_CONFIG,
+    }
+    return mapping.get(hive_name.upper())
+
+
+def registry_probe(key_path: str) -> list[dict[str, Any]]:
+    """Read a named hive key and its default/values; read-only."""
+    if not _win:
+        return [{"hive": "", "path": key_path, "name": "unavailable",
+                 "value": "non-windows host", "value_type": "probe"}]
+    import winreg
+
+    hive_name, sep, subkey = key_path.partition("\\")
+    hive = _registry_hive(hive_name)
+    if hive is None:
+        return [{"hive": hive_name, "path": key_path, "name": "error",
+                 "value": "unknown hive", "value_type": "probe"}]
+    rows: list[dict[str, Any]] = []
+    try:
+        with winreg.OpenKey(hive, subkey) as key:
+            try:
+                value, _vtype = winreg.QueryValueEx(key, None)
+                rows.append({"hive": hive_name.upper(), "path": key_path,
+                             "name": "(default)", "value": str(value), "value_type": "default"})
+            except OSError:
+                pass
+            index = 0
+            while True:
+                try:
+                    name, value, vtype = winreg.EnumValue(key, index)
+                except OSError:
+                    break
+                val = value
+                if vtype == winreg.REG_BINARY:
+                    val = value.hex()
+                elif isinstance(value, (bytes, bytearray)):
+                    val = value.decode("utf-8", "replace")
+                rows.append({"hive": hive_name.upper(), "path": key_path,
+                             "name": name, "value": str(val),
+                             "value_type": winreg.QueryValueEx(key, name)[1]})
+                index += 1
+    except OSError as exc:
+        rows.append({"hive": hive_name.upper(), "path": key_path, "name": "error",
+                     "value": str(exc), "value_type": "oserror"})
+    if not rows:
+        rows.append({"hive": hive_name.upper(), "path": key_path, "name": "ok",
+                     "value": "key present, no values", "value_type": "probe"})
+    return rows
+
+
+def service_probe(service_name: str) -> list[dict[str, Any]]:
+    """Read a named service config via SCM (sc-query-class semantics)."""
+    if not _win:
+        return [{"name": service_name or "", "display": "unavailable",
+                 "start_type": "", "path": "", "account": "non-windows host",
+                 "binary_path": ""}]
+    try:
+        qc = subprocess.run(
+            ["sc.exe", "qc", service_name or ""],
+            capture_output=True, text=True, timeout=10,
+        )
+        text = (qc.stdout or "") + (qc.stderr or "")
+    except (subprocess.SubprocessError, OSError):
+        return [{"name": service_name or "", "display": "", "start_type": "",
+                 "path": "", "account": "sc probe failed", "binary_path": ""}]
+    fields: dict[str, str] = {}
+    for line in text.splitlines():
+        if ":" not in line:
+            continue
+        key, _, value = line.partition(":")
+        fields[key.strip().upper()] = value.strip()
+    account = fields.get("SERVICE_START_NAME", "")
+    binary_path = fields.get("BINARY_PATH_NAME", "")
+    if start := fields.get("START_TYPE"):
+        start = start.split(" ", 1)[-1]
+    return [{
+        "name": fields.get("SERVICE_NAME", service_name or ""),
+        "display": fields.get("DISPLAY_NAME", ""),
+        "start_type": start,
+        "path": binary_path,
+        "account": account,
+        "binary_path": binary_path,
+    }]
+
+
+def identity_probe() -> list[dict[str, Any]]:
+    """Report effective principal + privilege state without elevation."""
+    privileges = "none"
+    if _win:
+        try:
+            if ctypes.windll.shell32.IsUserAnAdmin():
+                privileges = "administrator"
+        except Exception:
+            privileges = "none"
+    user = os.environ.get("USERNAME", os.environ.get("USER", ""))
+    domain = os.environ.get("USERDOMAIN", platform.node().split(".")[0])
+    return [{
+        "user": user,
+        "domain": domain,
+        "sid": _current_sid(user, domain),
+        "privileges": privileges,
+        "hostname": platform.node(),
+    }]
+
+
+def _current_sid(user: str, domain: str) -> str:
+    try:
+        out = subprocess.run(
+            ["whoami.exe", "/user"],
+            capture_output=True, text=True, timeout=10,
+        ).stdout
+    except (subprocess.SubprocessError, OSError):
+        return ""
+    for line in out.splitlines():
+        if "S-1-" not in line:
+            continue
+        # "SID:  S-1-5-21-...-1001" -- take whatever follows S-1-
+        tail = line.split("S-1-", 1)[1].strip().split()
+        return "S-1-" + (tail[0] if tail else "")
+    return ""

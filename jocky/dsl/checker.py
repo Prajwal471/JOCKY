@@ -48,6 +48,7 @@ BOUND_BUILTINS = frozenset({
     "collect_processes", "analyze_network_connections", "list_services",
     "list_drivers", "list_autostarts", "read_events", "scan_lotl",
     "sign_evidence", "dispatch", "len", "int", "float", "str", "bool",
+    "probe_registry", "probe_service", "probe_identity",
 })
 
 

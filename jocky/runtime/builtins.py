@@ -26,6 +26,9 @@ BUILTIN_CAPABILITIES: dict[str, str] = {
     "scan_lotl": "lotl:scan",
     "sign_evidence": "evidence:sign",
     "dispatch": "collection:dispatch",
+    "probe_registry": "registry:query",
+    "probe_service": "service:probe",
+    "probe_identity": "identity:probe",
 }
 
 BOOLEAN_ASSIST = {
@@ -38,6 +41,9 @@ BOOLEAN_ASSIST = {
     "scan_lotl": "local file scan for Living-off-the-Land binaries",
     "sign_evidence": "Ed25519 record signature (agent key)",
     "dispatch": "fan-out mission to endorsed endpoints",
+    "probe_registry": "winreg OpenKey/EnumValue read of a named hive key",
+    "probe_service": "SCM sc qc read of a named service config",
+    "probe_identity": "whoami /user + effective-privilege probe",
 }
 
 
@@ -82,6 +88,15 @@ if SAMPLE_DATA:
             {"hostname": endpoint, "platform": "windows", "os_version": "10.0",
              "collector_version": "0.1.0", "privileges": "none"}
         ])
+
+    def probe_registry(key_path: str) -> list[dict[str, Any]]:
+        return _rows("RegistryValue", S.SAMPLE_REGISTRY)
+
+    def probe_service(service_name: str) -> list[dict[str, Any]]:
+        return _rows("ServiceConfig", S.SAMPLE_SERVICECONFIG)
+
+    def probe_identity() -> list[dict[str, Any]]:
+        return _rows("Identity", S.SAMPLE_IDENTITY)
 else:
     from jocky.runtime import harvesters as H
 
@@ -115,6 +130,15 @@ else:
 
     def dispatch(endpoint: str, mission: str) -> list[dict[str, Any]]:
         return _rows("SystemInfo", H.system_info(endpoint))
+
+    def probe_registry(key_path: str) -> list[dict[str, Any]]:
+        return _rows("RegistryValue", H.registry_probe(key_path))
+
+    def probe_service(service_name: str) -> list[dict[str, Any]]:
+        return _rows("ServiceConfig", H.service_probe(service_name))
+
+    def probe_identity() -> list[dict[str, Any]]:
+        return _rows("Identity", H.identity_probe())
 
 
 BOUND_BUILTINS: frozenset[str] = frozenset(BUILTIN_CAPABILITIES)

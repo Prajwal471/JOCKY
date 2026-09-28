@@ -52,6 +52,32 @@ def test_health(client):
     assert r.json()["status"] == "ok"
 
 
+def test_interop_metrics_endpoint(client):
+    client.post("/missions", json={"source": MISSION})
+    r = client.get("/metrics/interop")
+    assert r.status_code == 200
+    body = r.json()
+    assert body["missions"] == 1
+    assert body["chain_continuity"]["status"] == "ok"
+    assert body["jir_stability"]["status"] == "ok"
+    assert body["signature_verifiability"]["status"] == "ok"
+
+
+def test_mission_proofs_endpoint(client):
+    client.post("/missions", json={"source": MISSION})
+    mid = client.get("/missions").json()[0]["id"]
+    r = client.get(f"/missions/{mid}/proofs")
+    assert r.status_code == 200
+    body = r.json()
+    assert body["all_hold"] is True
+    assert {p["proof"] for p in body["proofs"]} >= {
+        "P1_source_to_jir_determinism",
+        "P4_chain_hash_recompute",
+        "P5_signature_verify",
+    }
+    assert client.get("/missions/99999/proofs").status_code == 404
+
+
 def test_create_mission_and_evidence(client):
     r = client.post("/missions", json={"source": MISSION, "author": "api-user", "purpose": "lab"})
     assert r.status_code == 200

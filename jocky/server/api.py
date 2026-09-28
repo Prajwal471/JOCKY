@@ -16,7 +16,7 @@ from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
-from jocky.server import db, dispatch
+from jocky.server import db, dispatch, metrics
 
 app = FastAPI(title="JOCKY Dispatch Server", version="0.1.0")
 
@@ -149,3 +149,21 @@ def evidence(
 @app.get("/agents")
 def agents(session: Session = Depends(get_session)) -> list[dict[str, Any]]:
     return dispatch.list_agents(session)
+
+
+@app.get("/metrics/interop")
+def interop(session: Session = Depends(get_session)) -> dict[str, Any]:
+    """Block 9: machine-checkable interop invariants over persisted state."""
+    return metrics.interop_metrics(session, dispatch.agent_signer().public_key_hex)
+
+
+@app.get("/missions/{mission_id}/proofs")
+def mission_proofs(mission_id: int, session: Session = Depends(get_session)) -> dict[str, Any]:
+    """Block 9: the P1-P5 equivalence proofs for one mission."""
+    from jocky.eval.equivalence import prove_mission_all_hold
+
+    mission = _mission_or_404(session, mission_id)
+    all_hold, proofs = prove_mission_all_hold(
+        session, mission, dispatch.agent_signer().public_key_hex
+    )
+    return {"mission_id": mission_id, "all_hold": all_hold, "proofs": proofs}

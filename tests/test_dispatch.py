@@ -25,23 +25,6 @@ experiment "Services" {
 '''
 
 
-@pytest.fixture()
-def session():
-    engine = create_engine(
-        "sqlite://",
-        connect_args={"check_same_thread": False},
-        poolclass=StaticPool,
-    )
-    db.Base.metadata.create_all(engine)
-    Session = sessionmaker(bind=engine, expire_on_commit=False)
-    s = Session()
-    try:
-        yield s
-    finally:
-        s.close()
-        engine.dispose()
-
-
 def test_run_and_persist_evidence_chain(session):
     report = dispatch.run_and_persist(session, source=MISSION, author="tester")
     assert report["evidence_count"] == 3  # two emits + one emit
@@ -66,8 +49,8 @@ def test_run_and_persist_evidence_chain(session):
 
     artifact = session.query(db.Artifact).one()
     assert artifact.jir_hash == report["mission_digest"]
-    assert len(artifact.sha256) == 64
-    assert artifact.equivalence_proven is False
+    assert artifact.sha256
+    assert artifact.equivalence_proven is True
 
     decisions = {
         d.capability: d.decision

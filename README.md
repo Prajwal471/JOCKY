@@ -34,7 +34,8 @@ jocky/
   dsl/       lexer, parser, AST, JIR
   compiler/  LLVM codegen + passes
   runtime/   collectors (ctypes Windows, /proc Linux)
-  server/    FastAPI, ORM, evidence chain
+  server/    FastAPI, ORM, evidence chain, interop metrics
+  eval/      equivalence-proof harness
   crypto/    Ed25519 signing
 examples/    *.jky missions
 lab/         VM provisioning

@@ -170,6 +170,21 @@ def sign_record(
     return rec, chain_index + 1
 
 
+def _mark_equivalence(session: Session, mission: db.Mission) -> bool:
+    """Run P1-P5 for this mission and set ``Artifact.equivalence_proven`` (Block 9)."""
+    from jocky.eval.equivalence import prove_mission_all_hold
+
+    artifacts = session.query(db.Artifact).filter_by(mission_id=mission.id).all()
+    if not artifacts:
+        return False
+    all_hold, _proofs = prove_mission_all_hold(
+        session, mission, agent_signer().public_key_hex
+    )
+    for artifact in artifacts:
+        artifact.equivalence_proven = all_hold
+    return all_hold
+
+
 def run_and_persist(
     session: Session,
     *,
@@ -256,6 +271,8 @@ def run_and_persist(
         from jocky.runtime.identity import mission_card_to_dict
 
         card_payload = mission_card_to_dict(issued_card)
+    session.flush()
+    _mark_equivalence(session, mission)
     session.commit()
     return {
         "name": mission.name,

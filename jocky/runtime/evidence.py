@@ -15,7 +15,7 @@ from pathlib import Path
 from typing import Any
 
 from cryptography.hazmat.primitives import hashes, serialization
-from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey
+from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey, Ed25519PublicKey
 
 from jocky.config import KEYS_DIR
 
@@ -116,10 +116,60 @@ def sign_evidence_record(
     return record
 
 
+def verify_record(record: dict[str, Any], public_key_hex: str) -> bool:
+    """Recompute and verify a persisted evidence record (Block 9, P4/P5).
+
+    Checks, in order: the payload digest, the chain hash, then the Ed25519
+    signature over the canonical signed blob. Returns True only if all three
+    reproduce.  ``record`` must carry the fields persisted by
+    :class:`jocky.server.db.EvidenceRecord`.
+    """
+    payload = record.get("payload")
+    if not isinstance(payload, dict):
+        return False
+    if sha256_bytes(payload) != record.get("payload_sha256"):
+        return False
+    chain_hash = sha256_bytes(
+        {
+            "index": record["chain_index"],
+            "prev": record["prev_hash"],
+            "payload_sha256": record["payload_sha256"],
+            "mission": payload.get("_mission_digest", ""),
+        }
+    )
+    if chain_hash != record.get("chain_hash"):
+        return False
+    signed_blob = canonical_bytes(
+        {
+            "chain_hash": chain_hash,
+            "payload_sha256": record["payload_sha256"],
+            "prev": record["prev_hash"],
+        }
+    )
+    try:
+        pub = Ed25519PublicKey.from_public_bytes(bytes.fromhex(public_key_hex))
+        pub.verify(bytes.fromhex(record["signature"]), signed_blob)
+    except Exception:
+        return False
+    return True
+
+
+def harvest_payload(payload: dict[str, Any]) -> dict[str, Any]:
+    """Strip evidence-injected fields so two harvests of identical host state
+    can be compared byte-for-byte (Block 9, P6 collection determinism)."""
+    return {
+        k: v
+        for k, v in payload.items()
+        if k not in {"_mission_digest", "_nonce"}
+    }
+
+
 __all__ = [
     "canonical_bytes",
     "sha256_bytes",
     "Ed25519Signer",
     "sign_evidence_record",
+    "verify_record",
+    "harvest_payload",
     "JIR_CHAIN_ALGORITHM",
 ]

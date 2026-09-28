@@ -132,12 +132,20 @@ def _expr(e: Expr) -> dict[str, Any]:
 
 
 def _pipe(op: PipeOp) -> dict[str, Any]:
-    if op.op in ("filter",):
-        return {"op": op.op, "arg": _expr(op.arg)}
-    if op.op == "apply":
+    d: dict[str, Any] = {"op": op.op}
+    if op.op == "filter":
+        d["arg"] = _expr(op.arg)
+    elif op.op == "apply":
         arg = op.arg or {}
-        return {"op": op.op, "arg": {"name": arg.get("name"), "args": [_expr(a) for a in arg.get("args", [])]}}
-    return {"op": op.op, "arg": op.arg}
+        d["arg"] = {
+            "name": arg.get("name"),
+            "args": [_expr(a) for a in (arg.get("args") or [])],
+        }
+    elif isinstance(op.arg, list):
+        d["arg"] = [_expr(a) if isinstance(a, Expr) else a for a in op.arg]
+    else:
+        d["arg"] = op.arg
+    return d
 
 
 def _stmt(s) -> dict[str, Any]:

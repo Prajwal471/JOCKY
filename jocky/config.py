@@ -11,6 +11,8 @@ from pathlib import Path
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 
+KEYS_DIR = PROJECT_ROOT / "jocky" / "keys"
+
 DEFAULT_DATABASE_URL = "postgresql+psycopg://jocky:demo@localhost:5432/jocky"
 
 DATABASE_URL = os.environ.get("JOCKY_DATABASE_URL", DEFAULT_DATABASE_URL)

@@ -19,6 +19,8 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from jocky.config import MAX_RECURSION_DEPTH, WHILE_ITERATION_CAP
+from jocky.dsl.jir import digest
+from jocky.runtime.identity import MissionCard
 from jocky.dsl.ast import (
     AssertStmt,
     AssignStmt,
@@ -54,7 +56,6 @@ from jocky.dsl.ast import (
     UnitDef,
     WhileStmt,
 )
-from jocky.dsl.jir import digest
 from jocky.runtime.builtins import (
     BOUND_BUILTINS,
     BUILTIN_CAPABILITIES,
@@ -105,6 +106,7 @@ class MissionRun:
     result: Any = None
     error: str | None = None
     mission_digest: str = ""
+    card_verified: bool = True
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -115,6 +117,7 @@ class MissionRun:
             "result": self.result,
             "error": self.error,
             "mission_digest": self.mission_digest,
+            "card_verified": self.card_verified,
         }
 
 
@@ -125,10 +128,12 @@ class Interpreter:
         maximum_steps: int = 500_000,
         loop_cap: int = WHILE_ITERATION_CAP,
         recursion_cap: int = MAX_RECURSION_DEPTH,
+        mission_card: MissionCard | None = None,
     ):
         self.maximum_steps = maximum_steps
         self.loop_cap = loop_cap
         self.recursion_cap = recursion_cap
+        self.mission_card = mission_card
         self._budget = maximum_steps
         self._depth = 0
         self._caps: frozenset[str] = frozenset()
@@ -145,6 +150,19 @@ class Interpreter:
         mission_digest = digest(prog)
         run = MissionRun(unit=unit, mission_digest=mission_digest)
         self._caps = frozenset(unit.requires)
+        if self.mission_card is not None:
+            if not self.mission_card.verify():
+                run.error = "mission card signature or expiry failed"
+                run.card_verified = False
+            elif not self.mission_card.authorizes(self._caps):
+                run.error = (
+                    "mission requires capabilities beyond the signed mission card: "
+                    f"{sorted(self._caps - set(self.mission_card.capabilities))}"
+                )
+            elif self.mission_card.mission_digest != mission_digest:
+                run.error = "mission JIR digest does not match the pinned mission card (JIR drift)"
+            if run.error:
+                return run
         scope: dict[str, Any] = {f.name: f for f in prog.functions}
         try:
             last = None

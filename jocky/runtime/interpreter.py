@@ -16,7 +16,7 @@ verifiable externally.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any
+from typing import Any, Callable
 
 from jocky.config import MAX_RECURSION_DEPTH, WHILE_ITERATION_CAP
 from jocky.dsl.jir import digest
@@ -129,11 +129,13 @@ class Interpreter:
         loop_cap: int = WHILE_ITERATION_CAP,
         recursion_cap: int = MAX_RECURSION_DEPTH,
         mission_card: MissionCard | None = None,
+        on_emit: Callable[[dict[str, Any]], None] | None = None,
     ):
         self.maximum_steps = maximum_steps
         self.loop_cap = loop_cap
         self.recursion_cap = recursion_cap
         self.mission_card = mission_card
+        self.on_emit = on_emit
         self._budget = maximum_steps
         self._depth = 0
         self._caps: frozenset[str] = frozenset()
@@ -217,9 +219,10 @@ class Interpreter:
             return self._eval_expr(stmt.expr, scope)
         if kind == "emit":
             value = self._eval_expr(stmt.value, scope)
-            self._emitted.append(
-                {"label": stmt.label, "value": value, "source": "emit"}
-            )
+            record = {"label": stmt.label, "value": value, "source": "emit"}
+            self._emitted.append(record)
+            if self.on_emit is not None:
+                self.on_emit(record)
             return None
         if kind == "assert":
             if not self._truthy(self._eval_expr(stmt.cond, scope)):

@@ -77,3 +77,28 @@ def test_create_mission_rejects_escalation(client):
     r = client.post("/missions", json={"source": 'mission "X" { let s = list_services(); emit s; }'})
     assert r.status_code == 400
     assert "not declared" in r.json()["detail"]
+
+
+def test_mission_evidence_endpoint(client):
+    r = client.post("/missions", json={"source": MISSION})
+    assert r.status_code == 200
+    evidence = client.get("/evidence").json()
+    target_id = client.get("/missions").json()[0]["id"]
+    me = client.get(f"/missions/{target_id}/evidence").json()
+    assert me["mission_id"] == target_id
+    assert me["evidence_count"] == 1
+    assert me["evidence"][0]["chain_hash"] == evidence[0]["chain_hash"]
+    assert client.get("/missions/99999/evidence").status_code == 404
+
+
+def test_sse_stream_emits_records(client):
+    r = client.post("/missions", json={"source": MISSION})
+    assert r.status_code == 200
+    target_id = client.get("/missions").json()[0]["id"]
+    with client.stream("GET", f"/missions/{target_id}/stream") as resp:
+        assert resp.status_code == 200
+        chunks = list(resp.iter_text())
+    joined = "".join(chunks)
+    assert "event: evidence" in joined
+    assert "event: done" in joined
+    assert '"chain_hash"' in joined

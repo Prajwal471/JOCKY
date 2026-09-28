@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import hashlib
 from datetime import datetime, timezone
-from typing import Any
+from typing import Any, Callable
 
 from sqlalchemy.orm import Session
 
@@ -128,57 +128,46 @@ def _record_rows(payload: Any) -> list[dict[str, Any]]:
     return [{"result": payload}]
 
 
-def chain_evidence(
-    session: Session,
+def sign_record(
     *,
-    emitted: list[dict[str, Any]],
+    emitted_value: Any,
     mission_digest: str,
     endpoint_id: int,
     mission_id: int,
     capability_label: str,
     source_label: str,
-    start_index: int,
-    tail: str = "",
-) -> tuple[list[db.EvidenceRecord], int]:
-    """Turn a mission run's emissions into signed, chained evidence rows."""
-    records: list[db.EvidenceRecord] = []
-    idx = start_index
-    prev_hash = tail
-    signer = agent_signer()
-    for emitted_item in emitted:
-        value = emitted_item.get("value")
-        payload: dict[str, Any] = {"rows": _record_rows(value)}
-        signed = sign_evidence_record(
-            finding_type="observation",
-            source=source_label,
-            payload=payload,
-            privileges="none",
-            capability=capability_label,
-            chain_index=idx,
-            prev_hash=prev_hash,
-            mission_digest=mission_digest,
-            signer=signer,
-        )
-        rec = db.EvidenceRecord(
-            endpoint_id=endpoint_id,
-            mission_id=mission_id,
-            finding_type=signed["finding_type"],
-            source=signed["source"],
-            privileges=signed["privileges"],
-            payload=signed["payload"],
-            payload_sha256=signed["payload_sha256"],
-            observed_at=datetime.now(timezone.utc),
-            chain_index=signed["chain_index"],
-            prev_hash=signed["prev_hash"],
-            chain_hash=signed["chain_hash"],
-            capability=signed["capability"],
-            signature=signed["signature"],
-        )
-        session.add(rec)
-        records.append(rec)
-        prev_hash = signed["chain_hash"]
-        idx += 1
-    return records, idx
+    chain_index: int,
+    prev_hash: str,
+) -> tuple[db.EvidenceRecord, int]:
+    """Sign + build one evidence record; returns (record, next chain index)."""
+    payload: dict[str, Any] = {"rows": _record_rows(emitted_value)}
+    signed = sign_evidence_record(
+        finding_type="observation",
+        source=source_label,
+        payload=payload,
+        privileges="none",
+        capability=capability_label,
+        chain_index=chain_index,
+        prev_hash=prev_hash,
+        mission_digest=mission_digest,
+        signer=agent_signer(),
+    )
+    rec = db.EvidenceRecord(
+        endpoint_id=endpoint_id,
+        mission_id=mission_id,
+        finding_type=signed["finding_type"],
+        source=signed["source"],
+        privileges=signed["privileges"],
+        payload=signed["payload"],
+        payload_sha256=signed["payload_sha256"],
+        observed_at=datetime.now(timezone.utc),
+        chain_index=signed["chain_index"],
+        prev_hash=signed["prev_hash"],
+        chain_hash=signed["chain_hash"],
+        capability=signed["capability"],
+        signature=signed["signature"],
+    )
+    return rec, chain_index + 1
 
 
 def run_and_persist(
@@ -189,8 +178,14 @@ def run_and_persist(
     purpose: str = "",
     name: str | None = None,
     card: Any = None,
+    stream: Callable[[dict[str, Any]], None] | None = None,
 ) -> dict[str, Any]:
-    """Parse, dispatch, sign and persist a mission; return its full report."""
+    """Parse, dispatch, sign and persist a mission; return its full report.
+
+    When ``stream`` is provided, every ``emit`` is signed and persisted as the
+    interpreter loop runs (live chain tail) and the callback is invoked with
+    the fresh record dict so the caller can forward it to an SSE client.
+    """
     from jocky.runtime.identity import issue_mission_card
 
     endpoint = ensure_endpoint(session)
@@ -202,6 +197,7 @@ def run_and_persist(
     record_capability_decisions(session, mission=mission, jir_hash=mission_digest)
     mission.status = "dispatched"
     session.flush()
+    session.commit()
 
     issued_card = card
     if card is not None:
@@ -214,34 +210,44 @@ def run_and_persist(
 
     runs: list[dict[str, Any]] = []
     evidence_rows: list[db.EvidenceRecord] = []
+    current_cap: str = "evidence:sign"
     index = 0
+
+    def _live_emit(record: dict[str, Any]) -> None:
+        nonlocal index, current_cap
+        tail = evidence_rows[-1].chain_hash if evidence_rows else ""
+        rec, index = sign_record(
+            emitted_value=record.get("value"),
+            mission_digest=mission_digest,
+            endpoint_id=endpoint.id,
+            mission_id=mission.id,
+            capability_label=current_cap,
+            source_label=f"jockey::collectors::{current_cap.split(':')[0]}",
+            chain_index=index,
+            prev_hash=tail,
+        )
+        session.add(rec)
+        session.flush()
+        session.commit()
+        evidence_rows.append(rec)
+        if stream is not None:
+            stream(record_json(rec))
+
     for unit in prog.units:
-        run = run_mission(prog, unit, mission_card=issued_card)
+        current_cap = (list(unit.requires) or ["evidence:sign"])[0]
+        run = run_mission(prog, unit, mission_card=issued_card, on_emit=_live_emit)
         if run.error:
             mission.status = "failed"
             session.commit()
             raise RuntimeError(f"mission {unit.name!r} failed: {run.error}")
-        cap = (list(unit.requires) or ["evidence:sign"])[0]
-        recs, index = chain_evidence(
-                session,
-                emitted=run.emitted,
-                mission_digest=mission_digest,
-                endpoint_id=endpoint.id,
-                mission_id=mission.id,
-                capability_label=cap,
-                source_label=f"jockey::collectors::{cap.split(':')[0]}",
-                start_index=index,
-                tail=evidence_rows[-1].chain_hash if evidence_rows else "",
-            )
         session.flush()
-        evidence_rows.extend(recs)
         runs.append({
             "unit": unit.name,
             "kind": unit.kind,
             "emitted": run.emitted,
             "steps": run.steps,
             "result": run.result,
-            "evidence_count": len(recs),
+            "evidence_count": len(evidence_rows),
         })
 
     mission.status = "completed"
@@ -262,6 +268,23 @@ def run_and_persist(
     }
 
 
+def record_json(r: db.EvidenceRecord) -> dict[str, Any]:
+    """Serialize an evidence record for API/stream consumption."""
+    return {
+        "id": r.id,
+        "finding_type": r.finding_type,
+        "source": r.source,
+        "capability": r.capability,
+        "chain_index": r.chain_index,
+        "prev_hash": r.prev_hash,
+        "chain_hash": r.chain_hash,
+        "payload_sha256": r.payload_sha256,
+        "signature": r.signature,
+        "observed_at": r.observed_at.isoformat() if r.observed_at else "",
+        "payload": r.payload,
+    }
+
+
 def query_evidence(
     session: Session,
     *,
@@ -279,19 +302,7 @@ def query_evidence(
     if capability:
         q = q.filter(db.EvidenceRecord.capability == capability)
     rows = q.order_by(db.EvidenceRecord.chain_index.asc()).limit(limit).offset(max(offset, 0)).all()
-    return [{
-        "id": r.id,
-        "finding_type": r.finding_type,
-        "source": r.source,
-        "capability": r.capability,
-        "chain_index": r.chain_index,
-        "prev_hash": r.prev_hash,
-        "chain_hash": r.chain_hash,
-        "payload_sha256": r.payload_sha256,
-        "signature": r.signature,
-        "observed_at": r.observed_at.isoformat() if r.observed_at else "",
-        "payload": r.payload,
-    } for r in rows]
+    return [record_json(r) for r in rows]
 
 
 def list_missions(session: Session, limit: int = 50) -> list[dict[str, Any]]:

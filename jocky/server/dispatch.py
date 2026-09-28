@@ -194,6 +194,7 @@ def run_and_persist(
     name: str | None = None,
     card: Any = None,
     stream: Callable[[dict[str, Any]], None] | None = None,
+    maximum_steps: int | None = None,
 ) -> dict[str, Any]:
     """Parse, dispatch, sign and persist a mission; return its full report.
 
@@ -250,7 +251,10 @@ def run_and_persist(
 
     for unit in prog.units:
         current_cap = (list(unit.requires) or ["evidence:sign"])[0]
-        run = run_mission(prog, unit, mission_card=issued_card, on_emit=_live_emit)
+        kwargs: dict[str, Any] = {"mission_card": issued_card, "on_emit": _live_emit}
+        if maximum_steps is not None:
+            kwargs["maximum_steps"] = maximum_steps
+        run = run_mission(prog, unit, **kwargs)
         if run.error:
             mission.status = "failed"
             session.commit()

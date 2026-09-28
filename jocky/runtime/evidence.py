@@ -17,7 +17,7 @@ from typing import Any
 from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric.ed25519 import Ed25519PrivateKey, Ed25519PublicKey
 
-from jocky.config import KEYS_DIR
+from jocky import config as _config
 
 JIR_CHAIN_ALGORITHM = "sha256"
 
@@ -37,7 +37,9 @@ class Ed25519Signer:
     """Ed25519 signer backed by a persistent agent key on disk."""
 
     def __init__(self, key_path: Path | None = None):
-        self.key_path = key_path or (KEYS_DIR / "agent_ed25519.pem")
+        # Resolved at construction time, not import time, so an evaluation run
+        # that overrides config.KEYS_DIR cannot fall back to the repo's key.
+        self.key_path = key_path or (_config.KEYS_DIR / "agent_ed25519.pem")
         self.private: Ed25519PrivateKey = self._load_or_create()
         self.public_key_hex = self._public_hex()
 

@@ -25,6 +25,9 @@ docker run -d --name jocky-pg -e POSTGRES_PASSWORD=demo -e POSTGRES_USER=jocky \
 
 # tests:
 .venv/Scripts/pytest
+
+# evaluation matrix (Block 10):
+.venv/Scripts/python -m jocky.eval.harness --mode sample --out report.json
 ```
 
 ## Layout
@@ -35,7 +38,7 @@ jocky/
   compiler/  LLVM codegen + passes
   runtime/   collectors (ctypes Windows, /proc Linux)
   server/    FastAPI, ORM, evidence chain, interop metrics
-  eval/      equivalence-proof harness
+  eval/      equivalence proofs, baseline matrix, evaluation harness
   crypto/    Ed25519 signing
 examples/    *.jky missions
 lab/         VM provisioning

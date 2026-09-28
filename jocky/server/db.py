@@ -129,3 +129,37 @@ class CoverageClause(Base):
     mechanism: Mapped[str] = mapped_column(Text, default="")
     protected_block: Mapped[str] = mapped_column(String(64), default="")
     notes: Mapped[str] = mapped_column(Text, default="")
+
+
+class EvalBaselineRun(Base):
+    """One measured baseline from the Block 10 evaluation matrix.
+
+    Deliberately has no wall-clock column: performance numbers stay out of the
+    durable record until the Phase-2 measurement phase, and live only in the
+    harness's local report. What is persisted are the *auditable* claims —
+    status, expectation tallies, proof/determinism/no-mutation booleans, the
+    independent-citation deltas, and the environment provenance that the
+    measurement was taken under.
+    """
+
+    __tablename__ = "eval_baseline_runs"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    baseline_id: Mapped[str] = mapped_column(String(64), index=True)
+    name: Mapped[str] = mapped_column(String(255))
+    mode: Mapped[str] = mapped_column(String(16), index=True)  # sample | live
+    status: Mapped[str] = mapped_column(String(16), index=True)  # PASS | FAIL | ERROR
+    property: Mapped[str] = mapped_column(String(128), default="")
+    capabilities: Mapped[list] = mapped_column(JSON, default=list)
+    expectations_total: Mapped[int] = mapped_column(Integer, default=0)
+    expectations_passed: Mapped[int] = mapped_column(Integer, default=0)
+    evidence_count: Mapped[int] = mapped_column(Integer, default=0)
+    steps: Mapped[int] = mapped_column(Integer, default=0)
+    proofs_hold: Mapped[bool] = mapped_column(default=False)
+    determinism_hold: Mapped[bool] = mapped_column(default=False)
+    bounds_hold: Mapped[bool] = mapped_column(default=False)
+    no_mutation_hold: Mapped[bool] = mapped_column(default=False)
+    citation: Mapped[list] = mapped_column(JSON, default=list)
+    provenance: Mapped[dict] = mapped_column(JSON, default=dict)
+    detail: Mapped[dict] = mapped_column(JSON, default=dict)
+    ran_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())

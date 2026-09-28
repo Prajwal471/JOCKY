@@ -19,6 +19,10 @@ DATABASE_URL = os.environ.get("JOCKY_DATABASE_URL", DEFAULT_DATABASE_URL)
 
 IS_TESTING = DATABASE_URL.startswith("sqlite")
 
+# Set JOCKY_SAMPLE_DATA=1 for deterministic synthetic rows (tests). The demo
+# and production runs use the live Windows harvesters (Block 4 seam).
+SAMPLE_DATA = os.environ.get("JOCKY_SAMPLE_DATA", "").lower() in {"1", "true", "yes", "on"}
+
 DEMO_TOLERANCE = float(os.environ.get("JOCKY_DEMO_TOLERANCE", "1e-6"))
 
 MAX_RECURSION_DEPTH = int(os.environ.get("JOCKY_MAX_RECURSION", "64"))

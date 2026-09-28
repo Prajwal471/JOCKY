@@ -13,4 +13,5 @@ migrations/versions/*.pyc
 *.jir
 *.sig
 jocky/keys/*.key
+jocky/keys/*.pem
 !jocky/keys/.gitkeep

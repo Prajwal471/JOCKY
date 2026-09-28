@@ -142,8 +142,8 @@ mission "Rec" {
     assert "recursion depth" in run.error
 
 
-def test_evidence_signing_roundtrip():
-    signer = Ed25519Signer()
+def test_evidence_signing_roundtrip(tmp_path):
+    signer = Ed25519Signer(key_path=tmp_path / "agent_ed25519.pem")
     rec = sign_evidence_record(
         finding_type="observation",
         source="collectors.test",

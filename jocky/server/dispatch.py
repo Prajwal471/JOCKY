@@ -8,16 +8,19 @@ and by the demo scripts, so the API and the CLI share the same trust path.
 
 from __future__ import annotations
 
+import hashlib
 from datetime import datetime, timezone
 from typing import Any
 
 from sqlalchemy.orm import Session
 
+from jocky.config import LLVM_PASSES
 from jocky.dsl.jir import digest, jir_document
 from jocky.dsl.parser import parse
 from jocky.runtime.evidence import Ed25519Signer, sign_evidence_record
 from jocky.runtime.interpreter import run_mission
 from jocky.server import db
+from jocky.server.coverage import seed_coverage
 
 _agent_signer: Ed25519Signer | None = None
 
@@ -57,11 +60,61 @@ def save_mission(session: Session, source: str, author: str, name: str | None = 
         jir=doc,
         jir_sha256=digest(prog),
         author=author,
-        status="dispatched",
+        status="queued",
     )
     session.add(mission)
     session.flush()
     return mission
+
+
+def record_artifact(
+    session: Session,
+    *,
+    mission: db.Mission,
+    jir_hash: str,
+    variant_index: int = 0,
+) -> db.Artifact:
+    """Capture the compiled artifact for a mission (jir hash + source digest)."""
+    artifact = db.Artifact(
+        mission_id=mission.id,
+        variant_index=variant_index,
+        jir_hash=jir_hash,
+        sha256=hashlib.sha256(mission.source_text.encode("utf-8")).hexdigest(),
+        llvm_ir_hash="",
+        passes=LLVM_PASSES,
+        equivalence_proven=False,
+    )
+    session.add(artifact)
+    session.flush()
+    return artifact
+
+
+def record_capability_decisions(
+    session: Session,
+    *,
+    mission: db.Mission,
+    jir_hash: str,
+) -> list[db.CapabilityDecision]:
+    """Persist the ALLOW/DENY decision for every capability in the mission.
+
+    ``parse()`` already gates unknown + never-grant capabilities at compile
+    time (checker.validate_capabilities), so reaching this point means every
+    declared requirement is allowed by the registry.
+    """
+    decisions: list[db.CapabilityDecision] = []
+    declared = mission.jir["program"]["declared_capabilities"]
+    for cap in declared:
+        decision = db.CapabilityDecision(
+            mission_id=mission.id,
+            capability=cap,
+            decision="ALLOW",
+            reason="declared in capability registry; compile-time validate() gate passed",
+            jir_hash=jir_hash,
+        )
+        session.add(decision)
+        decisions.append(decision)
+    session.flush()
+    return decisions
 
 
 def _record_rows(payload: Any) -> list[dict[str, Any]]:
@@ -144,14 +197,18 @@ def run_and_persist(
     mission = save_mission(session, source, author, name)
     prog = parse(source)
     mission_digest = digest(prog)
-    declared = mission.jir["program"]["declared_capabilities"]
+    seed_coverage(session)
+    record_artifact(session, mission=mission, jir_hash=mission_digest)
+    record_capability_decisions(session, mission=mission, jir_hash=mission_digest)
+    mission.status = "dispatched"
+    session.flush()
 
     issued_card = card
     if card is not None:
         issued_card = issue_mission_card(
             signer=card,
             mission_digest=mission_digest,
-            capabilities=declared,
+            capabilities=mission.jir["program"]["declared_capabilities"],
             purpose=purpose,
         )
 
@@ -161,7 +218,8 @@ def run_and_persist(
     for unit in prog.units:
         run = run_mission(prog, unit, mission_card=issued_card)
         if run.error:
-            session.rollback()
+            mission.status = "failed"
+            session.commit()
             raise RuntimeError(f"mission {unit.name!r} failed: {run.error}")
         cap = (list(unit.requires) or ["evidence:sign"])[0]
         recs, index = chain_evidence(
@@ -186,6 +244,7 @@ def run_and_persist(
             "evidence_count": len(recs),
         })
 
+    mission.status = "completed"
     card_payload = None
     if issued_card is not None:
         from jocky.runtime.identity import mission_card_to_dict

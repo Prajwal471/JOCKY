@@ -62,6 +62,28 @@ def test_run_and_persist_evidence_chain(session):
     mission = session.query(db.Mission).one()
     assert mission.jir_sha256 == report["mission_digest"]
     assert mission.jir["program"]["name"] == "Recon"
+    assert mission.status == "completed"
+
+    artifact = session.query(db.Artifact).one()
+    assert artifact.jir_hash == report["mission_digest"]
+    assert len(artifact.sha256) == 64
+    assert artifact.equivalence_proven is False
+
+    decisions = {
+        d.capability: d.decision
+        for d in session.query(db.CapabilityDecision).all()
+    }
+    assert decisions == {"process:list": "ALLOW", "network:analyze": "ALLOW", "service:list": "ALLOW"}
+
+    clauses = session.query(db.CoverageClause).all()
+    assert len(clauses) == 8
+    assert all(c.status == "LIVE" for c in clauses)
+
+
+def test_failed_mission_marks_status(session):
+    with pytest.raises(RuntimeError):
+        dispatch.run_and_persist(session, source='mission "Bad" { unknown_builtin(); }')
+    assert session.query(db.Mission).one().status == "failed"
 
 
 def test_capabilities_carried_into_evidence(session):

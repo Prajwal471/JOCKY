@@ -7,6 +7,12 @@ evidence and agent identity for the demo dashboards.
 Block 11 adds the active-measure endpoints and serves the demo dashboard from
 ``static/``. The dashboard is a single static page with no build step and no
 external assets, so it works on an air-gapped host.
+
+Block 13 protects the two routes that can cause work -- ``POST /missions`` and
+``POST /measures/run`` -- with the bearer token in :mod:`jocky.server.auth`.
+The read routes stay open for the dashboard. A mission's ``author`` is derived
+from the presented token, never from the request body, so attribution cannot be
+spoofed.
 """
 
 from __future__ import annotations
@@ -26,6 +32,7 @@ from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from jocky.server import db, dispatch, metrics
+from jocky.server.auth import require_token
 
 app = FastAPI(title="JOCKY Dispatch Server", version="0.1.0")
 
@@ -45,7 +52,13 @@ def get_session() -> Session:
 
 class MissionIn(BaseModel):
     source: str = Field(..., min_length=1, description="JOCKY mission source text")
-    author: str = "demo-operator"
+    author: Optional[str] = Field(
+        default=None,
+        description=(
+            "Deprecated and ignored: `author` is now derived from the API token "
+            "so a caller cannot attribute a mission to someone else."
+        ),
+    )
     purpose: str = "defense demonstration"
     name: Optional[str] = None
 
@@ -56,12 +69,16 @@ def health() -> dict[str, Any]:
 
 
 @app.post("/missions", response_class=JSONResponse)
-def create_mission(body: MissionIn, session: Session = Depends(get_session)) -> dict[str, Any]:
+def create_mission(
+    body: MissionIn,
+    principal: dict[str, Any] = Depends(require_token),
+    session: Session = Depends(get_session),
+) -> dict[str, Any]:
     try:
         return dispatch.run_and_persist(
             session,
             source=body.source,
-            author=body.author,
+            author=principal["operator"],
             purpose=body.purpose,
             name=body.name,
         )
@@ -207,8 +224,15 @@ def measures() -> dict[str, Any]:
 
 
 @app.post("/measures/run", response_class=JSONResponse)
-def run_measures(body: MeasureRunIn | None = None) -> dict[str, Any]:
+def run_measures(
+    body: MeasureRunIn | None = None,
+    principal: dict[str, Any] = Depends(require_token),
+) -> dict[str, Any]:
     """Run the active measures in a subprocess and return their report.
+
+    ``principal`` is unused beyond being the gate: declaring the dependency is
+    what makes the route refuse an unauthenticated caller. There is nothing to
+    attribute here, since a measure run is not a mission.
 
     Deliberately a subprocess: the measures need an isolated database and a
     throwaway agent key, and ``clean_env`` obtains that by overriding

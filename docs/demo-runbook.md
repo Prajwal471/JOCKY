@@ -110,12 +110,20 @@ not persisted; that is deliberate, and no performance figure is claimed.
 ### 3.3 A mission produces a signed, chained evidence record
 
 ```sh
+$env:JOCKY_API_TOKEN = python -c "from jocky.server.auth import new_token; print(new_token())"   # before starting the server
 $body = @{ source = Get-Content examples/attack_surface.jky -Raw } | ConvertTo-Json
-Invoke-RestMethod http://127.0.0.1:8000/missions -Method Post -Body $body -ContentType "application/json"
+Invoke-RestMethod http://127.0.0.1:8000/missions -Method Post -Body $body -ContentType "application/json" -Headers @{ "X-JOCKY-Token" = $env:JOCKY_API_TOKEN }
 ```
 
+`POST /missions` and `POST /measures/run` require the token; without it the
+server answers `401` (see `docs/authentication.md`). Omit the header and the
+call returns 401 rather than dispatching — worth showing, because the refusal is
+the property.
+
 Returns `mission_digest`, `mission_card`, `chain_hashes`, `runs`, and
-`evidence_count` (6 for this mission). Follow it up:
+`evidence_count` (6 for this mission). The mission is recorded with author
+`api-token-operator`; a `author` field in the request body is ignored. Follow it
+up:
 
 ```sh
 Invoke-RestMethod http://127.0.0.1:8000/missions            # id, name, status, jir_sha256
@@ -143,6 +151,12 @@ CDN, nothing fetched from the network, so it works on an air-gapped host. It
 shows the active measures, the coverage matrix, missions, evidence, and the
 interop invariants. `/docs` serves the OpenAPI UI and `/health` the liveness
 probe.
+
+The two buttons that dispatch work (run the demo mission, run the measures) need
+the API token: paste it into the **API token** field at the top of the page. It
+is kept in `sessionStorage` for the tab and sent only as `X-JOCKY-Token`. Press
+either button with the field empty and the page says `set an API token first`
+rather than firing a request that would come back 401.
 
 ## 4. Demonstrating a refusal
 

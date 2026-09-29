@@ -36,6 +36,8 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
+from sqlalchemy.orm import sessionmaker
+
 REPO_ROOT = Path(__file__).resolve().parents[1]
 PYPROJECT = REPO_ROOT / "pyproject.toml"
 CHANGELOG = REPO_ROOT / "CHANGELOG.md"
@@ -341,6 +343,100 @@ def gate_interop(report: Report) -> None:
     )
 
 
+def gate_auth(report: Report) -> None:
+    """Both mutating routes must refuse an unauthenticated caller.
+
+    Checked in-process against the app rather than over HTTP: the point is the
+    dependency, not the transport. Two cases matter, and the second is the one
+    that is easy to get wrong -- an *unset* ``JOCKY_API_TOKEN`` must still
+    refuse, otherwise dropping an environment variable silently reopens the
+    endpoint.
+    """
+    from fastapi.testclient import TestClient
+    from sqlalchemy import create_engine
+    from sqlalchemy.pool import StaticPool
+
+    from jocky.server import db
+    from jocky.server.api import app, get_session
+    from jocky.server.auth import TOKEN_ENV, TOKEN_HEADER, TOKEN_IDENTITY
+
+    payload = {
+        "source": (
+            '@requires(process:list)\n'
+            'mission "CutGate" {\n'
+            "  let p = collect_processes();\n"
+            "  emit p |count;\n"
+            "}\n"
+        )
+    }
+    original = os.environ.get(TOKEN_ENV)
+    # StaticPool keeps one connection alive, so the in-memory schema survives
+    # across the requests a TestClient makes on different threads.
+    engine = create_engine(
+        "sqlite://",
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
+    )
+    db.Base.metadata.create_all(engine)
+    Session = sessionmaker(bind=engine, expire_on_commit=False)
+
+    def override():
+        s = Session()
+        try:
+            yield s
+        finally:
+            s.close()
+
+    app.dependency_overrides[get_session] = override
+    try:
+        with TestClient(app) as client:
+            for label, env_value, headers in (
+                ("missing token", original, {}),
+                ("wrong token", original, {TOKEN_HEADER: "not-the-token"}),
+                ("unset server token", None, {TOKEN_HEADER: "anything"}),
+            ):
+                if env_value is None:
+                    os.environ.pop(TOKEN_ENV, None)
+                else:
+                    os.environ[TOKEN_ENV] = env_value
+                for route in ("/missions", "/measures/run"):
+                    r = client.post(route, json=payload, headers=headers)
+                    if r.status_code != 401:
+                        report.add(
+                            "auth",
+                            False,
+                            f"{route} returned {r.status_code} to a {label}, expected 401",
+                        )
+                        return
+            os.environ[TOKEN_ENV] = original or "cut-gate"
+            r = client.post("/missions", json=payload, headers={TOKEN_HEADER: os.environ[TOKEN_ENV]})
+            if r.status_code != 200:
+                report.add("auth", False, f"valid token rejected: {r.status_code} {r.text[:200]}")
+                return
+            # The author must come from the credential, not the request body.
+            listed = client.get("/missions").json()
+            if not listed or listed[-1]["author"] != TOKEN_IDENTITY:
+                got = listed[-1]["author"] if listed else None
+                report.add("auth", False, f"mission author is {got!r}, expected {TOKEN_IDENTITY!r}")
+                return
+    except Exception as exc:  # noqa: BLE001 - any failure fails the gate
+        report.add("auth", False, f"{type(exc).__name__}: {exc}")
+        return
+    finally:
+        app.dependency_overrides.clear()
+        if original is None:
+            os.environ.pop(TOKEN_ENV, None)
+        else:
+            os.environ[TOKEN_ENV] = original
+        engine.dispose()
+    report.add(
+        "auth",
+        True,
+        "POST /missions and POST /measures/run refuse a missing, wrong and unset token, "
+        "and accept a valid one",
+    )
+
+
 def gate_git(report: Report, *, allow_dirty: bool) -> None:
     """A cut is made from a committed tree."""
     def git(*args: str) -> tuple[int, str]:
@@ -391,6 +487,7 @@ def run_checks(
     gate_active_measures(report)
     gate_baseline_matrix(report)
     gate_interop(report)
+    gate_auth(report)
     if with_tests:
         gate_tests(report)
     gate_git(report, allow_dirty=allow_dirty)

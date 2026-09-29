@@ -59,6 +59,23 @@ from the network, so it works on an air-gapped host. It shows the active
 measures, the capability coverage matrix, live evidence streaming, missions,
 and the interop invariants.
 
+### Authentication
+
+The two routes that cause work require a shared token; everything else is open
+so the dashboard works without a login.
+
+```sh
+export JOCKY_API_TOKEN="$(python -c 'from jocky.server.auth import new_token; print(new_token())')"
+.venv/Scripts/python -m jocky.demo
+```
+
+`POST /missions` and `POST /measures/run` then want the header
+`X-JOCKY-Token: $JOCKY_API_TOKEN`; paste the same value into the dashboard's
+**API token** field. If `JOCKY_API_TOKEN` is unset the server **locks** those two
+routes rather than opening them, so a missing environment variable cannot
+silently expose them. `docs/authentication.md` covers rotation and what this
+deliberately is not — there are no accounts, roles or per-caller identity.
+
 ### Active measures
 
 `docs/active-measures.md` — the runnable form of the four properties claimed in
@@ -82,7 +99,8 @@ API shells out to the CLI so a measure cannot disturb the live server.
 
 One command re-derives every result this repository documents: the shipped
 examples, the front-end refusals, the capability registry, the five active
-measures, the seven-baseline matrix, and the interop invariants. It exits
+measures, the seven-baseline matrix, the interop invariants, and the
+authentication refusals. It exits
 non-zero and names the failing gate if any of them stops holding. `--live`
 reads the real host, `--with-tests` adds the pytest suite, `--json` is for
 tools. Details in `docs/cut-flow.md`.
@@ -92,7 +110,8 @@ tools. Details in `docs/cut-flow.md`.
 `docs/implementation-status.md` maps each claim in
 `JOCKY_Final_Research_Paper-1.pdf` to what this repository actually implements,
 including what is **absent**: no LLVM code generation, no program-transformation
-engine, no authentication, no Linux backend, no provisioned lab, and no
+engine, no accounts or roles (authentication is one shared token — see above), no
+Linux backend, no provisioned lab, and no
 latency, detection-rate, false-positive or portability figures. Those are not
 oversights to be discovered during a demo; they are recorded.
 
@@ -101,6 +120,7 @@ oversights to be discovered during a demo; they are recorded.
 | Document | Contents |
 | --- | --- |
 | `docs/implementation-status.md` | claim-to-evidence matrix against the paper |
+| `docs/authentication.md` | the API token, fail-closed behaviour, and its limits |
 | `docs/demo-runbook.md` | judge-facing runbook, with recovery steps |
 | `docs/cut-flow.md` | release cut gates and tagging procedure |
 | `docs/detection-definition.md` | what "detection" means here, and the four claimed properties |

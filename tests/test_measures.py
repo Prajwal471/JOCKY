@@ -23,8 +23,18 @@ from jocky.eval import measures as measures_mod
 from jocky.eval.harness import clean_env
 from jocky.server import db, dispatch
 from jocky.server.api import app, get_session
+from jocky.server.auth import TOKEN_ENV, TOKEN_HEADER
 
 REPO_KEY = config.PROJECT_ROOT / "jocky" / "keys" / "agent_ed25519.pem"
+
+#: Block 13 protects POST /measures/run, so the API fixture must present one.
+TEST_TOKEN = "test-token-not-a-real-secret"
+
+
+@pytest.fixture(autouse=True)
+def _api_token(monkeypatch):
+    monkeypatch.setenv(TOKEN_ENV, TEST_TOKEN)
+    return TEST_TOKEN
 
 
 @pytest.fixture()
@@ -53,6 +63,7 @@ def client():
     app.dependency_overrides[get_session] = override
     try:
         with TestClient(app) as c:
+            c.headers.update({TOKEN_HEADER: TEST_TOKEN})
             yield c
     finally:
         app.dependency_overrides.clear()

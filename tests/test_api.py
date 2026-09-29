@@ -1,4 +1,4 @@
-"""FastAPI surface tests for the JOCKY dispatch server (Block 4b)."""
+"""FastAPI surface tests for the JOCKY dispatch server (Blocks 4b and 13)."""
 
 from __future__ import annotations
 
@@ -10,6 +10,7 @@ from sqlalchemy.pool import StaticPool
 
 from jocky.server import db
 from jocky.server.api import app, get_session
+from jocky.server.auth import TOKEN_ENV, TOKEN_HEADER, TOKEN_IDENTITY
 
 MISSION = '''
 @requires(process:list)
@@ -18,6 +19,15 @@ mission "ApiProbe" {
   emit p |count;
 }
 '''
+
+#: Tests must present a token, so the fixture configures one for the duration.
+TEST_TOKEN = "test-token-not-a-real-secret"
+
+
+@pytest.fixture(autouse=True)
+def _api_token(monkeypatch):
+    monkeypatch.setenv(TOKEN_ENV, TEST_TOKEN)
+    return TEST_TOKEN
 
 
 @pytest.fixture()
@@ -40,6 +50,7 @@ def client():
     app.dependency_overrides[get_session] = override
     try:
         with TestClient(app) as c:
+            c.headers.update({TOKEN_HEADER: TEST_TOKEN})
             yield c
     finally:
         app.dependency_overrides.clear()
@@ -79,7 +90,7 @@ def test_mission_proofs_endpoint(client):
 
 
 def test_create_mission_and_evidence(client):
-    r = client.post("/missions", json={"source": MISSION, "author": "api-user", "purpose": "lab"})
+    r = client.post("/missions", json={"source": MISSION, "purpose": "lab"})
     assert r.status_code == 200
     body = r.json()
     assert body["evidence_count"] == 1
@@ -93,7 +104,7 @@ def test_create_mission_and_evidence(client):
 
     missions = client.get("/missions").json()
     assert missions[0]["name"] == "ApiProbe"
-    assert missions[0]["author"] == "api-user"
+    assert missions[0]["author"] == TOKEN_IDENTITY
 
     agents = client.get("/agents").json()
     assert len(agents) == 1

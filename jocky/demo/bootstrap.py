@@ -210,6 +210,17 @@ def main(argv: list[str] | None = None) -> int:
     _say(f"demo: dashboard  http://{args.host}:{args.port}/ui/")
     _say(f"demo: openapi    http://{args.host}:{args.port}/docs")
     _say(f"demo: health     http://{args.host}:{args.port}/health")
+    # Block 13 fails closed, so say so rather than letting the operator discover
+    # it when a dashboard button reports 401.
+    from jocky.server.auth import TOKEN_ENV, new_token
+
+    if os.environ.get(TOKEN_ENV):
+        _say(f"demo: api token  set (${TOKEN_ENV}); paste it into the dashboard's API token field")
+    else:
+        mint = "python -c \"from jocky.server.auth import new_token; print(new_token())\""
+        _say("demo: api token  NOT set - POST /missions and POST /measures/run are locked (401)")
+        _say(f"      PowerShell: ${TOKEN_ENV} = {mint}")
+        _say(f"      sh:         export {TOKEN_ENV}=$({mint})")
     _say("")
 
     import uvicorn

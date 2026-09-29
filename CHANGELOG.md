@@ -5,6 +5,28 @@ All notable changes to JOCKY are recorded here. The format follows
 adheres to semantic versioning for the language (`JIR_VERSION`) and the
 package.
 
+## Unreleased
+
+### Added
+
+- **Block 13** - shared-token authentication on the two mutating dispatch
+  routes. `JOCKY_API_TOKEN` is presented as `X-JOCKY-Token` and required by
+  `POST /missions` and `POST /measures/run`; read routes stay open so the
+  dashboard needs no login. Comparison is `secrets.compare_digest`, a missing
+  and a wrong token are indistinguishable, and an **unset** `JOCKY_API_TOKEN`
+  locks the routes rather than opening them. Mission `author` is now derived
+  from the credential (`api-token-operator`); a body-supplied `author` is
+  accepted for compatibility and ignored. The dashboard gained an API token
+  field held in `sessionStorage`. `jocky/release.py::gate_auth` fails any cut
+  whose mutating routes admit an unauthenticated caller. See
+  `docs/authentication.md`.
+
+### Known gaps at Unreleased
+
+Roles, accounts and per-caller identity remain absent: one shared secret, no
+login route, no RBAC and no revocation list, so paper §15 and §31 are still only
+partly delivered. The full list is in `docs/implementation-status.md`.
+
 ## 0.1.0 - 2026-09-29
 
 First tagged cut. The build is organised as twelve blocks, each one commit.

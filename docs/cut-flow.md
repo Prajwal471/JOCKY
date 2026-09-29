@@ -25,6 +25,7 @@ no `--force`, because a release that can be forced is not a gate.
 | `active-measures` | all five measures pass and each states a claim, a limit and its evidence | a measure passes vacuously, or one stops reporting what it does not prove |
 | `baseline-matrix` | all seven baselines pass with every expectation satisfied | a baseline regresses, or the catalogue shrinks |
 | `interop-invariants` | chain continuity, coverage, decisions, JIR stability, linkage and signature verification all hold | any invariant reports `status: broken` |
+| `auth` | both mutating routes refuse a missing, wrong, and *unset* token, and accept a valid one | `POST /missions` or `POST /measures/run` returns anything but 401 to an unauthenticated caller, or a valid token is rejected |
 | `git` | the tree is committed and on `master` | there are uncommitted changes (`--allow-dirty` to override) |
 | `tests` | the suite passes | anything fails (`--with-tests`; off by default because the suite is slow) |
 

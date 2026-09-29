@@ -97,6 +97,13 @@
   .log { font-size: 11px; }
   .muted { color: var(--dim); }
   .err { color: var(--fail); }
+  .tokrow { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-bottom: 10px; }
+  .tokrow input { flex: 1 1 260px; min-width: 200px; padding: 6px 8px; font: inherit; font-size: 12px;
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace; color: var(--fg);
+    background: #0c1219; border: 1px solid var(--line); border-radius: 4px; }
+  .tokrow input:focus { outline: none; border-color: var(--accent); }
+  .tokrow .state { font-size: 11px; }
+  .tokrow .mutedbtn { background: none; border: 1px solid var(--line); color: var(--dim); }
   footer { border-top: 1px solid var(--line); padding: 12px 20px; color: #5d6b7c; font-size: 11px; }
   code { color: #a5d6ff; }
 </style>
@@ -112,6 +119,17 @@
 </header>
 
 <main>
+  <section>
+    <h2>API token <span class="hint">&mdash; required to run a mission or the measures; read routes stay open</span></h2>
+    <div class="tokrow">
+      <input id="token" type="password" autocomplete="off" spellcheck="false"
+             placeholder="X-JOCKY-Token value (kept in this tab only, never sent anywhere else)">
+      <button id="token-save">Use token</button>
+      <button id="token-clear" class="mutedbtn">Clear</button>
+      <span class="state muted" id="token-state">no token set</span>
+    </div>
+  </section>
+
   <section>
     <h2>Active measures <span class="hint">&mdash; each drives a case that must fail; PASS means the failure was observed</span></h2>
     <div class="grid" id="properties">
@@ -177,6 +195,61 @@ async function jget(url) {
   const r = await fetch(url);
   if (!r.ok) throw new Error(url + " -> " + r.status);
   return r.json();
+}
+
+/* ------------------------------------------------------------- api token
+   The two routes that can cause work (POST /missions, POST /measures/run)
+   require the bearer token from Block 13. It is held in sessionStorage so it
+   dies with the tab and is never written to disk. */
+
+const TOKEN_KEY = "jocky.apiToken";
+
+function getToken() {
+  try { return sessionStorage.getItem(TOKEN_KEY) || ""; } catch (e) { return ""; }
+}
+
+function setToken(value) {
+  try {
+    if (value) sessionStorage.setItem(TOKEN_KEY, value);
+    else sessionStorage.removeItem(TOKEN_KEY);
+  } catch (e) { /* private mode: the token simply does not persist */ }
+  renderTokenState();
+}
+
+function authHeaders() {
+  const t = getToken();
+  return t ? { "X-JOCKY-Token": t } : {};
+}
+
+function renderTokenState() {
+  const el = $("token-state");
+  if (!el) return;
+  const t = getToken();
+  el.textContent = t ? "token set (" + t.length + " chars)" : "no token set";
+  el.className = t ? "state" : "state muted";
+}
+
+function initToken() {
+  const input = $("token");
+  if (input) {
+    input.value = getToken();
+    input.addEventListener("change", () => setToken(input.value.trim()));
+    input.addEventListener("keydown", (e) => { if (e.key === "Enter") setToken(input.value.trim()); });
+  }
+  const save = $("token-save");
+  if (save) save.addEventListener("click", () => setToken((input.value || "").trim()));
+  const clear = $("token-clear");
+  if (clear) clear.addEventListener("click", () => { if (input) input.value = ""; setToken(""); });
+  renderTokenState();
+}
+
+function needToken() {
+  if (getToken()) return false;
+  const note = $("mission-note");
+  if (note) { note.className = "err"; note.textContent = "set an API token first"; }
+  const runNote = $("run-all-note");
+  if (runNote) { runNote.className = "err"; runNote.textContent = "set an API token first"; }
+  return true;
 }
 
 /* ---------------------------------------------------------- header */
@@ -265,9 +338,10 @@ async function runAll(ids) {
   try {
     const res = await fetch("/measures/run", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
+      headers: Object.assign({ "Content-Type": "application/json" }, authHeaders()),
       body: JSON.stringify({ measure_ids: ids === ["all-measures"] ? null : ids }),
     });
+    if (res.status === 401) throw new Error("unauthenticated - set an API token above");
     if (!res.ok) throw new Error("HTTP " + res.status);
     const report = await res.json();
     (report.measures || []).forEach(renderMeasure);
@@ -339,15 +413,17 @@ const DEMO_MISSION = [
 $("run-mission").addEventListener("click", async () => {
   const btn = $("run-mission");
   const note = $("mission-note");
+  if (needToken()) { btn.disabled = false; return; }
   btn.disabled = true;
   note.className = "muted";
   note.textContent = "dispatching…";
   try {
     const r = await fetch("/missions", {
       method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ source: DEMO_MISSION, name: "DashboardDemo", author: "dashboard" }),
+      headers: Object.assign({ "Content-Type": "application/json" }, authHeaders()),
+      body: JSON.stringify({ source: DEMO_MISSION, name: "DashboardDemo" }),
     });
+    if (r.status === 401) throw new Error("unauthenticated - set an API token above");
     if (!r.ok) {
       const err = await r.json().catch(() => ({}));
       throw new Error(err.detail || ("HTTP " + r.status));
@@ -410,6 +486,7 @@ async function loadInterop() {
   }
 }
 
+initToken();
 loadHeader();
 loadMeasures().catch(() => {
   $("properties").innerHTML = '<div class="card err">could not load measures</div>';

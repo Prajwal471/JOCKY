@@ -55,7 +55,8 @@ python -m jocky.release --check
 | Telemetry correlation into a unified timeline | **Partial** | mission evidence and SSE stream exist; no cross-endpoint correlation store |
 | **Windows collectors** | **Measured** | live `ctypes`/SCM/Authenticode/eventlog harvesters |
 | **Ubuntu `/proc` collectors (§13, Table 1)** | **Absent** | `harvesters._win` gates on `win32`; non-Windows degrades to `[]` |
-| **Authentication and roles (§15, §31)** | **Absent** | no login route; `author` defaults to `"demo-operator"` |
+| API authentication on mutating routes (§15, §31) | **Measured** | `X-JOCKY-Token` on `POST /missions` and `POST /measures/run`; fails closed when unset; `auth` gate |
+| **Roles, accounts and per-caller identity (§15, §31)** | **Absent** | one shared secret; every authenticated caller is recorded as `api-token-operator`; no login route, no RBAC, no revocation list |
 | Endpoint registration and multi-endpoint fan-out (§32) | **Exercised** | `dispatch` capability; single-host in practice |
 
 ### Research layers (§20-§28)

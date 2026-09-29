@@ -5,7 +5,11 @@ All notable changes to JOCKY are recorded here. The format follows
 adheres to semantic versioning for the language (`JIR_VERSION`) and the
 package.
 
-## Unreleased
+## 0.2.0 - 2026-09-29
+
+Sixteen blocks. This cut is about the gap between *passing* and *provable*: the
+two mutating routes are now authenticated, the deployment target has actually
+been run, and a bug that only a durable database could expose is fixed.
 
 ### Fixed
 
@@ -18,11 +22,28 @@ package.
   empty, so the bug was invisible. `run_and_persist` now reports the
   `mission_id` it created and the harness and the measure use it. Found by
   actually running the demo against PostgreSQL for the first time since Block 11.
+- **Block 15** - three defects that made the runbook unsurvivable by following
+  it: the demo's `demo.db` was not git-ignored, so the zero-infrastructure path
+  made the `git` cut gate refuse; the runbook never set `JOCKY_API_TOKEN`, so
+  the dashboard's dispatch buttons refused at step 3.5; and the documented port
+  8000 is occupied on some hosts, so the default bind fails. Two quoted outputs
+  in the runbook were also stale, one of them predating the `auth` gate.
 - The pytest suite now clears `JOCKY_EVAL_DATABASE_URL` and
   `JOCKY_EVAL_KEYS_DIR` before collection. An operator who had the eval database
   exported — the normal state after running the harness — had the tests measure
   that database instead of an isolated one, and a failure in
   `test_matrix_interop_all_ok` said nothing about the code.
+- The distribution version is now single-sourced from package metadata
+  (`jocky.config.VERSION`) instead of being hardcoded in `pyproject.toml`, the
+  FastAPI app and `/health` separately. That triplication is how the runbook came
+  to quote a version the server no longer reported.
+
+### Changed
+
+- `llvmlite==0.49.0` is **removed** from the dependencies. It was declared but
+  never imported anywhere in the tree, and the paper's LLVM code-generation layer
+  is recorded as **Absent**; the dependency asserted a capability the repository
+  does not have. The install is now smaller and the manifest is honest.
 
 ### Added
 
@@ -37,8 +58,18 @@ package.
   field held in `sessionStorage`. `jocky/release.py::gate_auth` fails any cut
   whose mutating routes admit an unauthenticated caller. See
   `docs/authentication.md`.
+- The demo banner now states the API token state, so an operator who forgets
+  `JOCKY_API_TOKEN` is told which variable is missing instead of discovering a
+  401 in the browser. It prints the variable name and never the secret.
 
-### Known gaps at Unreleased
+### Verified
+
+- **PostgreSQL 16** (`postgres:16-alpine`) is now exercised rather than assumed:
+  every migration applies, all five example missions dispatch producing 21 signed
+  and chained records, all six interop invariants report `ok`, and the five
+  active measures and the seven-baseline matrix pass with `privileges: "none"`.
+
+### Known gaps at 0.2.0
 
 Roles, accounts and per-caller identity remain absent: one shared secret, no
 login route, no RBAC and no revocation list, so paper §15 and §31 are still only
@@ -106,6 +137,8 @@ First tagged cut. The build is organised as twelve blocks, each one commit.
 ### Known gaps at 0.1.0
 
 Recorded in full in `docs/implementation-status.md`. In short: no LLVM
-code generation (the declared `llvmlite` dependency is unused), no controlled
-program-transformation engine, no authentication, no multi-endpoint lab, and no
-latency, detection-rate or portability figures.
+code generation (the then-declared `llvmlite` dependency was unused and has
+since been removed), no controlled program-transformation engine, no
+authentication, no multi-endpoint lab, and no latency, detection-rate or
+portability figures. The authentication gap is closed at 0.2.0 for the two
+mutating routes; roles and per-caller identity remain absent.

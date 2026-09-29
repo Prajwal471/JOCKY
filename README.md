@@ -16,9 +16,8 @@ not invisibility — see `docs/detection-definition.md` and
 - PostgreSQL 16 + Alembic (SQLite supported for a zero-infrastructure demo)
 - Ed25519 signing (`cryptography`)
 
-`llvmlite==0.49.0` is declared as a dependency but is not yet imported: the
-compiler and code-generation layer is unbuilt. See
-`docs/implementation-status.md`.
+The paper's LLVM code-generation layer is **not** implemented and no longer
+appears in the manifest. See `docs/implementation-status.md`.
 
 ## Quick start
 

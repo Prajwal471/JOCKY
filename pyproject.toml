@@ -4,13 +4,12 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "jocky"
-version = "0.1.0"
+version = "0.2.0"
 description = "JOCKY: a forensic scripting language and framework for computer & network forensic analysis"
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
     "lark>=1.1.9",
-    "llvmlite==0.49.0",
     "numpy>=2.0,<3",
     "pydantic>=2.7",
     "cryptography>=42.0",

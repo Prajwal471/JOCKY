@@ -32,7 +32,7 @@ This is the shortest path to "does what you say it does":
 
 ```
 JOCKY cut check (sample): PASS
-  [PASS] version: pyproject 0.1.0, changelog entry present
+  [PASS] version: pyproject 0.2.0, changelog entry present
   [PASS] examples: 5 missions parse, JIR and pin deterministically
   [PASS] front-end-fails-closed: 5 invalid programs refused
   [PASS] capability-registry: 14 grantable, 8 never-grant, all refused at compile time

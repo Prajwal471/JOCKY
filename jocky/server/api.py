@@ -31,10 +31,11 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
+from jocky import config
 from jocky.server import db, dispatch, metrics
 from jocky.server.auth import require_token
 
-app = FastAPI(title="JOCKY Dispatch Server", version="0.1.0")
+app = FastAPI(title="JOCKY Dispatch Server", version=config.VERSION)
 
 STATIC_DIR = Path(__file__).resolve().parent / "static"
 
@@ -65,7 +66,7 @@ class MissionIn(BaseModel):
 
 @app.get("/health")
 def health() -> dict[str, Any]:
-    return {"status": "ok", "service": "jocky-dispatch", "version": "0.1.0"}
+    return {"status": "ok", "service": "jocky-dispatch", "version": config.VERSION}
 
 
 @app.post("/missions", response_class=JSONResponse)

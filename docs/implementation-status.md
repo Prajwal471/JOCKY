@@ -133,10 +133,11 @@ platform. The implemented JIR is a canonical JSON document of units,
 functions, statements and declared capabilities, versioned as `0.1.0`, and
 carries no target-platform field because only one platform is implemented.
 
-**An unused dependency.** `llvmlite==0.49.0` is declared in `pyproject.toml`
-but is not imported anywhere in the codebase. It is the intended dependency of
-the unbuilt compiler layer. It should be removed or the layer built before the
-next cut; leaving it declared and unused is a known issue of this cut.
+**An unused dependency.** `llvmlite==0.49.0` was declared in `pyproject.toml`
+but was not imported anywhere in the codebase. It was the intended dependency of
+the unbuilt compiler layer, and declaring it asserted a capability the repository
+does not have. **Removed at 0.2.0**; `test_llvmlite_is_not_a_dependency` keeps it
+out. The LLVM layer stays **Absent**.
 
 ## Also corrected at 0.1.0
 

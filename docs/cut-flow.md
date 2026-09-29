@@ -62,15 +62,25 @@ dirty tree.
 tag can never disagree with the package:
 
 ```sh
-python -m jocky.release --tag 0.1.0
-# git tag -a v0.1.0 -m 'JOCKY 0.1.0'
+python -m jocky.release --tag 0.2.0
+# git tag -a v0.2.0 -m 'JOCKY 0.2.0'
 ```
 
 **7. Push the commit, then the tag.**
 
 ```sh
 git push origin master
-git push origin v0.1.0
+git push origin v0.2.0
+```
+
+**8. Re-verify on the tagged tree.** The commit you tested is not always the
+commit you shipped. Check out the tag into a throwaway clone and re-run the cut
+there, so the verification belongs to the release rather than to the
+working tree it came from:
+
+```sh
+git clone --branch v0.2.0 --depth 1 . /tmp/jocky-verify
+cd /tmp/jocky-verify && python -m jocky.release --check --with-tests
 ```
 
 ## What a cut must not contain

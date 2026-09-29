@@ -217,8 +217,66 @@ def test_tag_must_match_the_pyproject_version(capsys):
 
 
 def test_tag_prints_a_command_for_the_current_version(capsys):
-    assert release.main(["--tag", "0.1.0"]) == 0
-    assert capsys.readouterr().out.strip() == "git tag -a v0.1.0 -m 'JOCKY 0.1.0'"
+    """The version is read from ``pyproject.toml``, not hardcoded.
+
+    It used to be the literal ``"0.1.0"``, which meant every version bump
+    broke this test -- the test was asserting a fact about the world that the
+    bump had invalidated, rather than about the code.
+    """
+    import tomllib
+    from pathlib import Path
+
+    pyproject = Path(__file__).resolve().parents[1] / "pyproject.toml"
+    version = tomllib.loads(pyproject.read_text(encoding="utf-8"))["project"]["version"]
+
+    assert release.main(["--tag", version]) == 0
+    assert capsys.readouterr().out.strip() == f"git tag -a v{version} -m 'JOCKY {version}'"
+
+
+def test_reported_version_matches_the_package_version():
+    """The server may not report a version the package does not have.
+
+    ``0.1.0`` was hardcoded independently in ``pyproject.toml``, the FastAPI app
+    and ``/health``. All three now derive from one place, and this test is what
+    keeps them from drifting apart again.
+    """
+    import tomllib
+    from pathlib import Path
+
+    from jocky import config
+
+    pyproject = Path(__file__).resolve().parents[1] / "pyproject.toml"
+    declared = tomllib.loads(pyproject.read_text(encoding="utf-8"))["project"]["version"]
+
+    assert config.VERSION == declared
+    assert not declared.endswith("+unknown"), "version metadata was not resolvable"
+
+    from jocky.server.api import app
+
+    assert app.version == declared
+
+    from fastapi.testclient import TestClient
+
+    with TestClient(app) as client:
+        assert client.get("/health").json()["version"] == declared
+
+
+def test_llvmlite_is_not_a_dependency():
+    """The unbuilt LLVM layer must not be advertised in the manifest.
+
+    ``llvmlite`` was declared but never imported, while ``docs/implementation-status.md``
+    lists LLVM code generation as **Absent**. A dependency asserts a capability
+    the repository does not have, so it was removed at 0.2.0.
+    """
+    import tomllib
+    from pathlib import Path
+
+    pyproject = Path(__file__).resolve().parents[1] / "pyproject.toml"
+    declared = tomllib.loads(pyproject.read_text(encoding="utf-8"))
+    names = " ".join(declared["project"]["dependencies"]) + " " + " ".join(
+        sum(declared["project"].get("optional-dependencies", {}).values(), [])
+    )
+    assert "llvmlite" not in names.lower()
 
 
 # -------------------------------------------------- front-end regressions

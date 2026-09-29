@@ -361,11 +361,12 @@ def _tamper_evidence(session: Session) -> dict[str, Any]:
         session, source=_CHAIN_MISSION, author="measure"
     )
     public_key = dispatch.agent_signer().public_key_hex
-    mission = (
-        session.query(db.Mission)
-        .filter_by(jir_sha256=report["mission_digest"])
-        .first()
-    )
+    # Resolve the mission by the id ``run_and_persist`` reported, not by JIR
+    # digest: on a durable database the same source may already be present from
+    # an earlier run, and a digest lookup would hand back that older mission --
+    # whose records were signed with a different key, so a *legitimate* record
+    # would fail verification and the measure would report a false FAIL.
+    mission = session.get(db.Mission, report["mission_id"])
     if mission is None:
         raise RuntimeError("measure mission was not persisted")
 

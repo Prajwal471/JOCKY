@@ -162,6 +162,53 @@ def test_baseline_by_id():
         baseline_by_id("nope")
 
 
+# --------------------------------------------------- durable-database identity
+
+def test_a_repeat_run_is_not_confused_with_the_first(tmp_path):
+    """A mission must be identified by the id, not by its JIR digest.
+
+    Regression found by running the harness against a *durable* database
+    (PostgreSQL, the documented deployment target). Dispatching the same source
+    twice creates two missions with the same ``jir_sha256``, so a digest lookup
+    with ``.first()`` returns the **older** one -- a different mission, holding
+    evidence signed by a different key. The caller then verifies the wrong
+    records and reports corruption that is not there. In-memory SQLite hid this
+    for the whole project because every run started empty.
+
+    The second run deliberately gets its own key directory, which is what makes
+    the mix-up observable: the first mission's records were signed by key A, so
+    verifying them against key B fails. A file-backed SQLite database is durable
+    in the same way as Postgres and needs no server.
+    """
+    url = f"sqlite:///{tmp_path / 'durable.db'}"
+    with clean_env(url, keys_dir=tmp_path / "keys-a") as session:
+        first = run_baseline(session, baseline_by_id("chain.integrity"), "sample")
+    with clean_env(url, keys_dir=tmp_path / "keys-b") as session:
+        second = run_baseline(session, baseline_by_id("chain.integrity"), "sample")
+
+    assert first["mission_digest"] == second["mission_digest"], "precondition: same source"
+    assert first["mission_id"] != second["mission_id"], "each dispatch is its own mission"
+    # Read against the *second* run's key. Had the harness resolved the first
+    # mission by digest, these records would not verify and proofs_hold would
+    # come back False.
+    assert second["proofs_hold"] is True, second.get("proofs")
+    assert second["verdict"] == "PASS", (second["verdict"], second.get("error"))
+    assert first["proofs_hold"] is True
+
+
+def test_dispatch_reports_the_mission_it_created(tmp_path):
+    """``run_and_persist`` must name its own mission, not leave it inferable."""
+    from jocky.server import dispatch
+
+    mission = '@requires(process:list)\nmission "IdProbe" {\n  emit collect_processes() |count;\n}\n'
+    with clean_env(f"sqlite:///{tmp_path / 'ids.db'}", keys_dir=tmp_path / "keys") as session:
+        a = dispatch.run_and_persist(session, source=mission, author="t")
+        b = dispatch.run_and_persist(session, source=mission, author="t")
+
+    assert a["mission_id"] != b["mission_id"]
+    assert a["mission_digest"] == b["mission_digest"]
+
+
 # ------------------------------------------------------------------- matrix
 
 def test_matrix_passes_in_sample_mode(eval_session):

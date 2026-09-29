@@ -280,6 +280,11 @@ def run_and_persist(
     session.commit()
     return {
         "name": mission.name,
+        # The id of *this* mission. Callers must not re-derive it from
+        # ``mission_digest``: dispatching the same source twice into a durable
+        # database creates two missions with the same digest, and a lookup by
+        # digest is then ambiguous and can silently return the older one.
+        "mission_id": mission.id,
         "mission_digest": mission_digest,
         "runs": runs,
         "evidence_count": len(evidence_rows),

@@ -2,6 +2,14 @@
 
 Real Windows harvesters are exercised by ``tests/test_harvesters.py``, which
 reads them directly and is not affected by this flag.
+
+The suite is also hermetic with respect to the evaluation environment. An
+operator who has ``JOCKY_EVAL_DATABASE_URL`` exported -- the normal state after
+running the harness against a real database -- would otherwise have the tests
+measure *that* database instead of an isolated one, and a failure in
+``test_matrix_interop_all_ok`` would say nothing about the code. These variables
+steer ``clean_env``; the tests pass their own database and key directories, so
+clearing them cannot change what is under test.
 """
 
 from __future__ import annotations
@@ -14,6 +22,12 @@ from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
 os.environ.setdefault("JOCKY_SAMPLE_DATA", "1")
+
+#: Removed before collection so an operator's shell cannot change what a test
+#: measures. ``setdefault`` above deliberately does *not* apply to these.
+for _leaked in ("JOCKY_EVAL_DATABASE_URL", "JOCKY_EVAL_KEYS_DIR"):
+    os.environ.pop(_leaked, None)
+del _leaked
 
 
 @pytest.fixture()

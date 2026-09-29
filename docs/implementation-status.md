@@ -145,3 +145,32 @@ next cut; leaving it declared and unused is a known issue of this cut.
   `JockySyntaxError`, which is what callers and the documentation assume.
 - `examples/` and `lab/` were advertised in the README layout. `examples/` now
   holds five verified missions; `lab/` is marked unprovisioned instead.
+- A mission was identified by its JIR digest rather than by the id
+  `run_and_persist` created, so a second dispatch of the same source into a
+  durable database was confused with the first. On PostgreSQL this made the
+  `tamper-evident` measure report a false FAIL on an intact chain. Every run
+  until then used in-memory SQLite, which starts empty and so hid it. See the
+  Block 14 entry in `CHANGELOG.md`.
+
+## Verified on PostgreSQL
+
+The deployment target is PostgreSQL 16, and as of Block 14 it has been exercised
+rather than assumed. Against `postgres:16-alpine`:
+
+- `alembic upgrade head` applies every migration, and the demo seeds and serves;
+- all five example missions dispatch, producing 21 signed, chained records;
+- all six interop invariants report `ok`, including `signature_verifiability`;
+- the five active measures and the seven-baseline matrix pass, with
+  `privileges: "none"`;
+- the two mutating routes refuse a missing token and accept a valid one.
+
+**One known constraint.** The `signature_verifiability` invariant requires every
+record in a database to verify against the *current* agent key. That holds for
+the demo and deployment database, which has one persistent key, but not for an
+evaluation database that keeps rows across runs while rotating a throwaway key
+per run — older records are then signed by a key that no longer exists. This is
+why the cut check runs the harness against in-memory SQLite by default. Pointing
+`JOCKY_EVAL_DATABASE_URL` at a durable database makes the matrix pass but will
+report `signature_verifiability: fail`, because the accumulated rows span many
+keys. The invariant's scope is deliberate; the interaction is a documented
+limitation rather than a fixed defect.

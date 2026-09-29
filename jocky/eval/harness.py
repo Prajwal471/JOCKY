@@ -280,6 +280,7 @@ def run_baseline(
         "row_counts": {},
         "runs": [],
         "mission_digest": "",
+        "mission_id": None,
     }
 
     try:
@@ -293,6 +294,7 @@ def run_baseline(
         result["runs"] = report["runs"]
         result["evidence_count"] = report["evidence_count"]
         result["mission_digest"] = report["mission_digest"]
+        result["mission_id"] = report["mission_id"]
         result["steps"] = sum(int(r["steps"]) for r in report["runs"])
     except RuntimeError as exc:
         result["status"] = "failed"
@@ -309,11 +311,8 @@ def run_baseline(
     if result["status"] == "completed" and result["mission_digest"]:
         from jocky.eval.equivalence import prove_mission_all_hold
 
-        mission = (
-            session.query(db.Mission)
-            .filter_by(jir_sha256=result["mission_digest"])
-            .first()
-        )
+        mid = _mission_id(session, result)
+        mission = session.get(db.Mission, mid) if mid is not None else None
         if mission is not None:
             all_hold, proofs = prove_mission_all_hold(
                 session, mission, dispatch.agent_signer().public_key_hex
@@ -352,9 +351,22 @@ def run_baseline(
 
 
 def _mission_id(session: Session, result: dict[str, Any]) -> int | None:
+    """The id of the mission a result came from.
+
+    ``run_and_persist`` reports the id it created, and that is the only
+    unambiguous answer: the same source dispatched twice into a durable database
+    produces two missions with the same ``jir_sha256``, so a digest lookup with
+    ``.first()`` can return the *older* one -- a different mission, signed by a
+    different key, with different evidence. The digest lookup is kept only as a
+    fallback for a hand-built result dict.
+    """
+    direct = result.get("mission_id")
+    if direct is not None:
+        return int(direct)
     m = (
         session.query(db.Mission)
         .filter_by(jir_sha256=result["mission_digest"])
+        .order_by(db.Mission.id)
         .first()
     )
     return m.id if m else None

@@ -255,6 +255,39 @@ def test_repository_key_is_not_created_by_a_measure_run(tmp_path):
     assert not REPO_KEY.exists()
 
 
+def test_measures_pass_against_a_durable_database(tmp_path):
+    """A measure run must not be broken by a database that already has data.
+
+    Regression found against PostgreSQL, the documented deployment target. The
+    ``tamper-evident`` measure re-read its mission by JIR digest with
+    ``.first()``. On a durable database the same mission source is already
+    present from an earlier run, so that lookup returned the *older* mission --
+    whose records were signed by a different agent key. Two of its observations
+    then failed ("record verifies before tampering", "record verifies again
+    once restored") and the measure reported FAIL on a chain that was in fact
+    intact. In-memory SQLite hid it because every run started empty.
+
+    A file-backed SQLite database is durable the same way and needs no server.
+    """
+    url = f"sqlite:///{tmp_path / 'durable.db'}"
+    with clean_env(url, keys_dir=tmp_path / "keys-a") as session:
+        first = measures_mod.run_measures(session)
+        session.commit()
+    with clean_env(url, keys_dir=tmp_path / "keys-b") as session:
+        second = measures_mod.run_measures(session)
+        session.commit()
+
+    for label, report in (("first", first), ("second", second)):
+        failed = [m["measure_id"] for m in report["measures"] if m["verdict"] != "PASS"]
+        assert report["verdict"] == "PASS", f"{label} run failed: {failed}"
+    tamper = [m for m in second["measures"] if m["measure_id"] == "tamper-evident"][0]
+    broken = [o["observation"] for o in tamper["observations"] if not o["holds"]]
+    assert not broken, broken
+    assert (tmp_path / "keys-a" / "agent_ed25519.pem").read_bytes() != (
+        tmp_path / "keys-b" / "agent_ed25519.pem"
+    ).read_bytes(), "precondition: the two runs used different keys"
+
+
 # ------------------------------------------------------------- API surface
 
 def test_measures_endpoint_lists_the_catalog(client):

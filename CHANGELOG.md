@@ -7,6 +7,23 @@ package.
 
 ## Unreleased
 
+### Fixed
+
+- **Block 14** - a mission was re-identified by its JIR digest with `.first()`,
+  which is ambiguous once the same source has been dispatched twice into the same
+  database. On a durable database (PostgreSQL, the documented deployment target)
+  the `tamper-evident` measure therefore read a *previous* run's evidence, signed
+  by a different agent key, and reported FAIL on a chain that was intact. The
+  whole project had only ever run against in-memory SQLite, where each run starts
+  empty, so the bug was invisible. `run_and_persist` now reports the
+  `mission_id` it created and the harness and the measure use it. Found by
+  actually running the demo against PostgreSQL for the first time since Block 11.
+- The pytest suite now clears `JOCKY_EVAL_DATABASE_URL` and
+  `JOCKY_EVAL_KEYS_DIR` before collection. An operator who had the eval database
+  exported — the normal state after running the harness — had the tests measure
+  that database instead of an isolated one, and a failure in
+  `test_matrix_interop_all_ok` said nothing about the code.
+
 ### Added
 
 - **Block 13** - shared-token authentication on the two mutating dispatch

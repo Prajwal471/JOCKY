@@ -31,18 +31,42 @@ def eval_session(tmp_path):
 
 # --------------------------------------------------------------- clean env
 
-def test_clean_env_does_not_touch_main_database(eval_session):
-    """The harness must not be able to write to the app's real session."""
+def test_clean_env_does_not_touch_main_database(eval_session, monkeypatch):
+    """The harness must not be able to write to the app's real session.
+
+    The app's session is rebound to a *second* in-memory database rather than
+    the configured ``DATABASE_URL``: the claim under test is that the harness
+    and the app use separate stores, which is provable here without a live
+    Postgres (this test previously needed one, and failed wherever Postgres was
+    not running).
+    """
+    from sqlalchemy import create_engine as _create_engine
+    from sqlalchemy.orm import sessionmaker as _sessionmaker
+    from sqlalchemy.pool import StaticPool as _StaticPool
+
     from jocky.server import dispatch
 
-    dispatch.run_and_persist(eval_session, source=BASELINES[0].mission)
-    assert eval_session.query(db.Mission).count() == 1
-    # the module-level SessionLocal (main DATABASE_URL) is untouched
-    main = db.SessionLocal()
+    main_engine = _create_engine(
+        "sqlite://",
+        connect_args={"check_same_thread": False},
+        poolclass=_StaticPool,
+    )
+    db.Base.metadata.create_all(main_engine)
+    main_session = _sessionmaker(bind=main_engine, expire_on_commit=False)
+    monkeypatch.setattr(db, "engine", main_engine)
+    monkeypatch.setattr(db, "SessionLocal", main_session)
     try:
-        assert main.query(db.Mission).count() >= 0
+        dispatch.run_and_persist(eval_session, source=BASELINES[0].mission)
+        assert eval_session.query(db.Mission).count() == 1
+
+        # the app's own session is a different store and saw none of it
+        app_session = db.SessionLocal()
+        try:
+            assert app_session.query(db.Mission).count() == 0
+        finally:
+            app_session.close()
     finally:
-        main.close()
+        main_engine.dispose()
 
 
 def test_clean_env_restores_signer_and_keys(eval_session, tmp_path):

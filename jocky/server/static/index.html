@@ -1,0 +1,424 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>JOCKY — contested-space observability</title>
+<style>
+  :root {
+    --bg: #0c1014;
+    --panel: #141a21;
+    --panel-2: #1b232c;
+    --line: #263140;
+    --fg: #dde5ee;
+    --dim: #8494a6;
+    --pass: #3fb950;
+    --fail: #f85149;
+    --live: #d29922;
+    --accent: #58a6ff;
+    --mono: ui-monospace, "Cascadia Mono", "SF Mono", Consolas, "Liberation Mono", monospace;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--fg);
+    font: 13px/1.55 var(--mono);
+  }
+  header {
+    border-bottom: 1px solid var(--line); padding: 14px 20px;
+    display: flex; align-items: center; gap: 14px; flex-wrap: wrap;
+    background: var(--panel);
+  }
+  header h1 { font-size: 15px; margin: 0; letter-spacing: .04em; }
+  header .sub { color: var(--dim); font-size: 12px; }
+  .spacer { flex: 1; }
+  .badge {
+    border: 1px solid var(--line); border-radius: 3px; padding: 2px 7px;
+    font-size: 11px; color: var(--dim); background: var(--panel-2);
+  }
+  .badge.live { color: var(--live); border-color: #4a3c14; }
+  .badge.sample { color: var(--accent); border-color: #1f3a5f; }
+  main { padding: 20px; max-width: 1500px; margin: 0 auto; }
+  section { margin-bottom: 26px; }
+  h2 {
+    font-size: 12px; text-transform: uppercase; letter-spacing: .1em;
+    color: var(--dim); margin: 0 0 10px; font-weight: 600;
+  }
+  h2 .hint { text-transform: none; letter-spacing: 0; color: #5d6b7c; font-weight: 400; }
+  button {
+    background: var(--panel-2); color: var(--fg); border: 1px solid var(--line);
+    border-radius: 3px; padding: 5px 11px; font: inherit; font-size: 12px; cursor: pointer;
+  }
+  button:hover:not(:disabled) { border-color: var(--accent); color: var(--accent); }
+  button:disabled { opacity: .45; cursor: not-allowed; }
+  button.primary { border-color: #2b4a6f; color: var(--accent); }
+  .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(390px, 1fr)); gap: 12px; }
+  .card { background: var(--panel); border: 1px solid var(--line); border-radius: 4px; padding: 13px 15px; }
+  .card h3 { margin: 0 0 3px; font-size: 13px; font-weight: 600; }
+  .card .claim { color: var(--dim); font-size: 12px; margin: 6px 0 0; }
+  .prop-name {
+    color: var(--accent); font-size: 11px; text-transform: uppercase;
+    letter-spacing: .08em; margin-bottom: 5px;
+  }
+  .verdict {
+    display: inline-block; font-size: 11px; font-weight: 700; letter-spacing: .08em;
+    padding: 1px 7px; border-radius: 3px; border: 1px solid;
+  }
+  .verdict.pass { color: var(--pass); border-color: #1c4a26; background: #0f2413; }
+  .verdict.fail, .verdict.error { color: var(--fail); border-color: #5c1f1c; background: #2a1110; }
+  .verdict.idle { color: var(--dim); border-color: var(--line); }
+  .obs { list-style: none; margin: 10px 0 0; padding: 0; font-size: 12px; }
+  .obs li { padding: 2px 0 2px 17px; position: relative; color: var(--dim); }
+  .obs li::before { position: absolute; left: 0; }
+  .obs li.holds { color: #a9b6c4; }
+  .obs li.holds::before { content: "✓"; color: var(--pass); }
+  .obs li.nohold { color: #c9b0ae; }
+  .obs li.nohold::before { content: "✗"; color: var(--fail); }
+  .detail {
+    margin-top: 9px; padding: 7px 9px; background: #0a0e12; border: 1px solid var(--line);
+    border-radius: 3px; font-size: 11px; color: #93a3b4; word-break: break-word;
+  }
+  .detail b { color: var(--fg); font-weight: 600; }
+  .limit { margin-top: 9px; font-size: 11px; color: #6d7c8d; font-style: italic; }
+  .chips { display: flex; flex-wrap: wrap; gap: 6px; }
+  .chip {
+    border: 1px solid var(--line); border-radius: 3px; padding: 3px 8px;
+    font-size: 11px; background: var(--panel); color: var(--dim);
+  }
+  .chip.measured { color: var(--pass); border-color: #1c4a26; }
+  .chip.live { color: var(--live); border-color: #4a3c14; }
+  .chip .mech { display: block; color: #5d6b7c; font-size: 10px; }
+  table { width: 100%; border-collapse: collapse; font-size: 12px; }
+  th, td { text-align: left; padding: 4px 9px; border-bottom: 1px solid var(--line); vertical-align: top; }
+  th { color: var(--dim); font-weight: 600; font-size: 11px; text-transform: uppercase; letter-spacing: .06em; }
+  td.ok { color: var(--pass); }
+  td.bad { color: var(--fail); }
+  .scroll { max-height: 320px; overflow-y: auto; border: 1px solid var(--line); border-radius: 4px; }
+  .scroll table tr:last-child td { border-bottom: none; }
+  .log { font-size: 11px; }
+  .muted { color: var(--dim); }
+  .err { color: var(--fail); }
+  footer { border-top: 1px solid var(--line); padding: 12px 20px; color: #5d6b7c; font-size: 11px; }
+  code { color: #a5d6ff; }
+</style>
+</head>
+<body>
+<header>
+  <h1>JOCKY</h1>
+  <span class="sub">read-only observability in contested space</span>
+  <span class="spacer"></span>
+  <span id="mode" class="badge">mode: &mdash;</span>
+  <span id="host" class="badge">host: &mdash;</span>
+  <span id="svc" class="badge">api: &mdash;</span>
+</header>
+
+<main>
+  <section>
+    <h2>Active measures <span class="hint">&mdash; each drives a case that must fail; PASS means the failure was observed</span></h2>
+    <div class="grid" id="properties">
+      <div class="card muted">loading&hellip;</div>
+    </div>
+  </section>
+
+  <section>
+    <h2>Capability coverage <span class="hint">&mdash; mechanism per collector, and how far it has been measured</span></h2>
+    <div class="chips" id="coverage"><span class="muted">loading&hellip;</span></div>
+  </section>
+
+  <section>
+    <h2>Evidence <span class="hint">&mdash; run a mission, then watch its signed records land</span></h2>
+    <p>
+      <button class="primary" id="run-mission">Run demo mission</button>
+      <span class="muted" id="mission-note"></span>
+    </p>
+    <div class="scroll log">
+      <table>
+        <thead><tr><th style="width:44px">idx</th><th style="width:150px">capability</th><th style="width:210px">chain hash</th><th>payload</th><th style="width:130px">sig</th></tr></thead>
+        <tbody id="evidence"><tr><td colspan="5" class="muted">no records yet</td></tr></tbody>
+      </table>
+    </div>
+  </section>
+
+  <section>
+    <h2>Missions</h2>
+    <div class="scroll">
+      <table>
+        <thead><tr><th style="width:44px">id</th><th>name</th><th style="width:120px">status</th><th style="width:230px">jir sha256</th><th style="width:70px">records</th></tr></thead>
+        <tbody id="missions"><tr><td colspan="5" class="muted">none</td></tr></tbody>
+      </table>
+    </div>
+  </section>
+
+  <section>
+    <h2>Interop invariants <span class="hint">&mdash; recomputed over persisted state on every request</span></h2>
+    <div class="scroll">
+      <table>
+        <thead><tr><th>invariant</th><th style="width:90px">status</th><th>detail</th></tr></thead>
+        <tbody id="interop"><tr><td colspan="3" class="muted">loading&hellip;</td></tr></tbody>
+      </table>
+    </div>
+  </section>
+</main>
+
+<footer>
+  Every verdict on this page was produced by running the case and observing the
+  outcome &mdash; nothing here is asserted from documentation. A PASS is a
+  statement about this build on this host; each card states what it does not
+  prove. <a href="/docs" style="color:var(--accent)">OpenAPI</a>
+</footer>
+
+<script>
+"use strict";
+const $ = (id) => document.getElementById(id);
+const esc = (s) => String(s === null || s === undefined ? "" : s)
+  .replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+const short = (s, n) => (s || "").length > n ? (s || "").slice(0, n) + "…" : (s || "");
+
+async function jget(url) {
+  const r = await fetch(url);
+  if (!r.ok) throw new Error(url + " -> " + r.status);
+  return r.json();
+}
+
+/* ---------------------------------------------------------- header */
+
+async function loadHeader() {
+  try {
+    const h = await jget("/health");
+    $("svc").textContent = "api: " + h.status + " " + h.version;
+  } catch (e) { $("svc").textContent = "api: unreachable"; $("svc").className = "badge live"; }
+  try {
+    const c = await jget("/coverage");
+    const m = c.counts.MEASURED || 0, t = c.clauses.length;
+    $("mode").textContent = "coverage: " + m + "/" + t + " measured";
+    $("mode").className = "badge " + (m === t ? "sample" : "live");
+  } catch (e) { /* coverage renders on its own */ }
+}
+
+/* ------------------------------------------------------- measures */
+
+const MEASURES = {};
+
+function measureCard(m, propName) {
+  const c = document.createElement("div");
+  c.className = "card";
+  c.id = "m-" + m.id;
+  c.innerHTML =
+    '<div class="prop-name">' + esc(propName || m.property) + "</div>" +
+    "<h3>" + esc(m.name) + ' <span class="verdict idle" id="v-' + esc(m.id) + '">NOT RUN</span></h3>' +
+    '<p class="claim">' + esc(m.claim) + "</p>" +
+    '<p><button data-run="' + esc(m.id) + '">Run measure</button></p>' +
+    '<ul class="obs" id="o-' + esc(m.id) + '"></ul>' +
+    '<div class="detail" id="d-' + esc(m.id) + '" style="display:none"></div>' +
+    '<div class="limit">Does not prove: ' + esc(m.does_not_prove) + "</div>";
+  return c;
+}
+
+async function loadMeasures() {
+  const data = await jget("/measures");
+  data.measures.forEach((m) => { MEASURES[m.id] = m; });
+  let cov = { properties: [] };
+  try { cov = await jget("/coverage"); } catch (e) { /* fall back to the catalog */ }
+
+  const byProp = new Map();
+  for (const p of cov.properties) byProp.set(p.property, p.measures);
+  for (const m of data.measures) {
+    if (!byProp.has(m.property)) byProp.set(m.property, []);
+    if (!byProp.get(m.property).includes(m.id)) byProp.get(m.property).push(m.id);
+  }
+
+  const host = $("properties");
+  host.innerHTML = "";
+  for (const [prop, ids] of byProp) {
+    for (const id of ids) {
+      const m = MEASURES[id];
+      if (m) host.appendChild(measureCard(m, prop));
+    }
+  }
+  if (!host.children.length) host.innerHTML = '<div class="card muted">no measures</div>';
+  host.appendChild(runAllButton());
+}
+
+function runAllButton() {
+  const wrap = document.createElement("div");
+  wrap.className = "card";
+  wrap.innerHTML = "<h3>Run every measure</h3>" +
+    "<p class='claim'>Each runs in a subprocess with an isolated database and a " +
+    "throwaway agent key, so a measure cannot touch this server's state.</p>" +
+    "<p><button class='primary' id='run-all'>Run all</button> " +
+    "<span class='muted' id='run-all-note'></span></p>";
+  return wrap;
+}
+
+document.addEventListener("click", async (ev) => {
+  const btn = ev.target.closest("button");
+  if (!btn) return;
+  if (btn.id === "run-all") { await runAll(["all-measures"]); return; }
+  const one = btn.getAttribute("data-run");
+  if (one) await runAll([one]);
+});
+
+async function runAll(ids) {
+  const buttons = Array.from(document.querySelectorAll("#properties button"));
+  buttons.forEach((b) => (b.disabled = true));
+  const note = $("run-all-note");
+  if (note) note.textContent = "running in an isolated subprocess…";
+  try {
+    const res = await fetch("/measures/run", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ measure_ids: ids === ["all-measures"] ? null : ids }),
+    });
+    if (!res.ok) throw new Error("HTTP " + res.status);
+    const report = await res.json();
+    (report.measures || []).forEach(renderMeasure);
+    if (note) {
+      const p = (report.measures || []).filter((m) => m.verdict === "PASS").length;
+      note.textContent = report.verdict + " — " + p + "/" + report.measures.length + " passed (" + report.mode + " mode)";
+    }
+  } catch (e) {
+    if (note) { note.textContent = e.message; note.className = "err"; }
+  } finally {
+    buttons.forEach((b) => (b.disabled = false));
+  }
+}
+
+function renderMeasure(m) {
+  const v = $("v-" + m.measure_id);
+  if (v) { v.textContent = m.verdict; v.className = "verdict " + m.verdict.toLowerCase(); }
+  const ul = $("o-" + m.measure_id);
+  if (ul) {
+    ul.innerHTML = (m.observations || []).map((o) =>
+      '<li class="' + (o.holds ? "holds" : "nohold") + '">' + esc(o.observation) + "</li>").join("");
+  }
+  const d = $("d-" + m.measure_id);
+  if (d) {
+    d.style.display = "block";
+    d.innerHTML = "<b>observed:</b> " + esc(m.detail) +
+      (m.notes ? "<br><b>notes:</b> " + esc(m.notes) : "");
+  }
+}
+
+/* -------------------------------------------------------- coverage */
+
+async function loadCoverage() {
+  const data = await jget("/coverage");
+  const host = $("coverage");
+  host.innerHTML = data.clauses.map((c) => {
+    const cls = c.status.toLowerCase();
+    return '<span class="chip ' + cls + '" title="' + esc(c.mechanism) + '">' +
+      esc(c.capability) + " · " + esc(c.status) +
+      '<span class="mech">' + esc(short(c.mechanism, 62)) + "</span></span>";
+  }).join("");
+}
+
+/* -------------------------------------------------------- missions */
+
+async function loadMissions() {
+  try {
+    const rows = await jget("/missions?limit=25");
+    const tb = $("missions");
+    if (!rows.length) { tb.innerHTML = '<tr><td colspan="5" class="muted">none</td></tr>'; return; }
+    tb.innerHTML = rows.map((m) =>
+      "<tr><td>" + esc(m.id) + "</td><td>" + esc(m.name) + "</td><td>" +
+      esc(m.status) + '</td><td class="muted">' + esc(short(m.jir_sha256, 20)) +
+      "</td><td>" + esc(m.evidence_count) + "</td></tr>").join("");
+  } catch (e) { /* server may be starting */ }
+}
+
+const DEMO_MISSION = [
+  "@requires(process:list, network:analyze, evidence:sign)",
+  'mission "DashboardDemo" {',
+  "  let p = collect_processes();",
+  "  emit p |count;",
+  "  let n = analyze_network_connections();",
+  "  emit n |count;",
+  "  emit p |take 1;",
+  "}",
+].join("\n");
+
+$("run-mission").addEventListener("click", async () => {
+  const btn = $("run-mission");
+  const note = $("mission-note");
+  btn.disabled = true;
+  note.className = "muted";
+  note.textContent = "dispatching…";
+  try {
+    const r = await fetch("/missions", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ source: DEMO_MISSION, name: "DashboardDemo", author: "dashboard" }),
+    });
+    if (!r.ok) {
+      const err = await r.json().catch(() => ({}));
+      throw new Error(err.detail || ("HTTP " + r.status));
+    }
+    const rep = await r.json();
+    note.textContent = rep.name + " — " + rep.evidence_count + " records, " +
+      rep.runs.length + " unit(s), digest " + short(rep.mission_digest, 12);
+    await loadMissions();
+    showEvidence(rep.evidence_count);
+    await loadInterop();
+  } catch (e) {
+    note.className = "err";
+    note.textContent = e.message;
+  } finally {
+    btn.disabled = false;
+  }
+});
+
+async function showEvidence(count) {
+  const missions = await jget("/missions?limit=1").catch(() => []);
+  if (!missions.length) return;
+  const id = missions[0].id;
+  const data = await jget("/missions/" + id + "/evidence");
+  const tb = $("evidence");
+  if (!data.evidence.length) {
+    tb.innerHTML = '<tr><td colspan="5" class="muted">no records</td></tr>';
+    return;
+  }
+  tb.innerHTML = data.evidence.map((r) =>
+    "<tr><td>" + esc(r.chain_index) + "</td><td>" + esc(r.capability) +
+    '</td><td class="muted">' + esc(short(r.chain_hash, 20)) + "</td><td>" +
+    esc(short(JSON.stringify(r.payload), 150)) +
+    '</td><td class="' + (r.signature ? "ok" : "bad") + '">' +
+    (r.signature ? "signed" : "UNSIGNED") + "</td></tr>").join("");
+}
+
+/* --------------------------------------------------------- interop */
+
+async function loadInterop() {
+  const tb = $("interop");
+  try {
+    const d = await jget("/metrics/interop");
+    const rows = [];
+    for (const [k, v] of Object.entries(d)) {
+      if (k === "signatures" || k === "coverage" || k === "capability_coverage") continue;
+      if (v && typeof v === "object") {
+        for (const [k2, v2] of Object.entries(v)) {
+          rows.push([k + "." + k2, v2, ""]);
+        }
+      } else {
+        rows.push([k, v, ""]);
+      }
+    }
+    tb.innerHTML = rows.map(([k, v]) =>
+      "<tr><td>" + esc(k) + '</td><td class="' +
+      (v === true || v === "PASS" || v === "ok" ? "ok" : v === false || v === "FAIL" ? "bad" : "") +
+      '">' + esc(JSON.stringify(v)) + "</td><td></td></tr>").join("");
+  } catch (e) {
+    tb.innerHTML = '<tr><td colspan="3" class="err">' + esc(e.message) + "</td></tr>";
+  }
+}
+
+loadHeader();
+loadMeasures().catch(() => {
+  $("properties").innerHTML = '<div class="card err">could not load measures</div>';
+});
+loadCoverage().catch(() => {
+  $("coverage").innerHTML = '<span class="err">could not load coverage</span>';
+});
+loadMissions();
+loadInterop();
+</script>
+</body>
+</html>

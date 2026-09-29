@@ -3,22 +3,36 @@
 POST /missions ingests a mission, runs it under the capability interpreter,
 signs and persists its evidence chain; the read endpoints expose missions,
 evidence and agent identity for the demo dashboards.
+
+Block 11 adds the active-measure endpoints and serves the demo dashboard from
+``static/``. The dashboard is a single static page with no build step and no
+external assets, so it works on an air-gapped host.
 """
 
 from __future__ import annotations
 
 import json
+import os
+import subprocess
+import sys
 import time
+from pathlib import Path
 from typing import Any, Optional
 
 from fastapi import Depends, FastAPI, HTTPException
-from fastapi.responses import JSONResponse, StreamingResponse
+from fastapi.responses import FileResponse, JSONResponse, RedirectResponse, StreamingResponse
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 from sqlalchemy.orm import Session
 
 from jocky.server import db, dispatch, metrics
 
 app = FastAPI(title="JOCKY Dispatch Server", version="0.1.0")
+
+STATIC_DIR = Path(__file__).resolve().parent / "static"
+
+#: How long a measure subprocess may run before it is killed.
+MEASURE_TIMEOUT_S = 180
 
 
 def get_session() -> Session:
@@ -167,3 +181,118 @@ def mission_proofs(mission_id: int, session: Session = Depends(get_session)) -> 
         session, mission, dispatch.agent_signer().public_key_hex
     )
     return {"mission_id": mission_id, "all_hold": all_hold, "proofs": proofs}
+
+
+# ------------------------------------------------------- Block 11: measures
+
+class MeasureRunIn(BaseModel):
+    measure_ids: Optional[list[str]] = Field(
+        default=None,
+        description="measure ids to run; omit to run all of them",
+    )
+
+
+@app.get("/measures")
+def measures() -> dict[str, Any]:
+    """The active-measure catalog. Reports no results — it runs nothing."""
+    from jocky.eval import measures as measures_mod
+
+    return {
+        "measures": measures_mod.catalog(),
+        "note": (
+            "Each measure drives a case that must fail and reports PASS only "
+            "when the failure was observed; POST /measures/run executes them."
+        ),
+    }
+
+
+@app.post("/measures/run", response_class=JSONResponse)
+def run_measures(body: MeasureRunIn | None = None) -> dict[str, Any]:
+    """Run the active measures in a subprocess and return their report.
+
+    Deliberately a subprocess: the measures need an isolated database and a
+    throwaway agent key, and ``clean_env`` obtains that by overriding
+    process-global state. The dispatch server serves requests on a thread pool,
+    so doing it in-process would let a measure run swap the live server's
+    signing key underneath an in-flight mission.
+    """
+    argv = [sys.executable, "-m", "jocky.eval.measures"]
+    if body is not None and body.measure_ids:
+        argv += ["--ids", *body.measure_ids]
+    env = dict(os.environ)
+    # Keep the subprocess off the server's database and key directory.
+    env.pop("JOCKY_EVAL_DATABASE_URL", None)
+    env.pop("JOCKY_EVAL_KEYS_DIR", None)
+    try:
+        proc = subprocess.run(
+            argv,
+            capture_output=True,
+            timeout=MEASURE_TIMEOUT_S,
+            env=env,
+            cwd=str(Path(__file__).resolve().parents[2]),
+        )
+    except subprocess.TimeoutExpired:
+        raise HTTPException(
+            status_code=504, detail=f"measures exceeded {MEASURE_TIMEOUT_S}s"
+        )
+    if proc.returncode not in (0, 1) or not proc.stdout:
+        raise HTTPException(
+            status_code=500,
+            detail=f"measure runner failed: {proc.stderr.decode('utf-8', 'replace')[-500:]}",
+        )
+    try:
+        return json.loads(proc.stdout.decode("utf-8", "replace"))
+    except json.JSONDecodeError:
+        raise HTTPException(status_code=500, detail="measure runner produced no report")
+
+
+@app.get("/coverage")
+def coverage(session: Session = Depends(get_session)) -> dict[str, Any]:
+    """Capability coverage plus the property->measure map for the dashboard."""
+    from jocky.eval import measures as measures_mod
+    from jocky.server.coverage import seed_coverage
+
+    if session.query(db.CoverageClause).count() == 0:
+        seed_coverage(session)
+        session.commit()
+
+    clauses = [
+        {
+            "capability": c.clause_id,
+            "title": c.title,
+            "status": c.status,
+            "mechanism": c.mechanism,
+            "notes": c.notes,
+        }
+        for c in session.query(db.CoverageClause).order_by(db.CoverageClause.clause_id).all()
+    ]
+    counts: dict[str, int] = {}
+    for c in clauses:
+        counts[c["status"]] = counts.get(c["status"], 0) + 1
+
+    properties: dict[str, list[str]] = {}
+    for m in measures_mod.MEASURES:
+        properties.setdefault(m.property, []).append(m.id)
+
+    return {
+        "clauses": clauses,
+        "counts": counts,
+        "properties": [
+            {"property": name, "measures": ids}
+            for name, ids in sorted(properties.items())
+        ],
+    }
+
+
+@app.get("/")
+def index() -> RedirectResponse:
+    return RedirectResponse("/ui/")
+
+
+@app.get("/ui")
+def ui_redirect() -> RedirectResponse:
+    return RedirectResponse("/ui/")
+
+
+if STATIC_DIR.is_dir():
+    app.mount("/ui", StaticFiles(directory=str(STATIC_DIR), html=True), name="ui")

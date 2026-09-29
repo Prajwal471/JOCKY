@@ -43,7 +43,14 @@ COVERAGE_SEED: list[dict[str, Any]] = [
 
 
 def seed_coverage(session) -> int:
-    """Idempotently upsert the coverage matrix; returns row count."""
+    """Idempotently upsert the coverage matrix; returns row count.
+
+    ``status`` is seeded only on insert. The dispatch path calls this on every
+    mission, so writing the seeded status on update would silently demote every
+    MEASURED clause back to LIVE the first time someone ran a mission after an
+    evaluation. A status may be promoted LIVE -> MEASURED by a passing
+    evaluation, but never demoted by a seed.
+    """
     for row in COVERAGE_SEED:
         existing = (
             session.query(CoverageClause)
@@ -54,6 +61,8 @@ def seed_coverage(session) -> int:
             session.add(CoverageClause(**row))
         else:
             for key, value in row.items():
+                if key == "status":
+                    continue
                 setattr(existing, key, value)
     session.flush()
     return len(COVERAGE_SEED)

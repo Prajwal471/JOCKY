@@ -199,28 +199,7 @@ def main(argv: list[str] | None = None) -> int:
         _say("demo: prepared (--no-serve)")
         return 0
 
-    # Report the *effective* mode, not the flag: the collectors bind their mode
-    # from the environment, so a banner driven by the flag alone can disagree
-    # with what is actually being collected.
-    from jocky import config
-
-    mode = "sample" if config.SAMPLE_DATA else "live"
-    _say("")
-    _say(f"demo: mode={mode}")
-    _say(f"demo: dashboard  http://{args.host}:{args.port}/ui/")
-    _say(f"demo: openapi    http://{args.host}:{args.port}/docs")
-    _say(f"demo: health     http://{args.host}:{args.port}/health")
-    # Block 13 fails closed, so say so rather than letting the operator discover
-    # it when a dashboard button reports 401.
-    from jocky.server.auth import TOKEN_ENV, new_token
-
-    if os.environ.get(TOKEN_ENV):
-        _say(f"demo: api token  set (${TOKEN_ENV}); paste it into the dashboard's API token field")
-    else:
-        mint = "python -c \"from jocky.server.auth import new_token; print(new_token())\""
-        _say("demo: api token  NOT set - POST /missions and POST /measures/run are locked (401)")
-        _say(f"      PowerShell: ${TOKEN_ENV} = {mint}")
-        _say(f"      sh:         export {TOKEN_ENV}=$({mint})")
+    print_banner(args)
     _say("")
 
     import uvicorn
@@ -235,4 +214,38 @@ def main(argv: list[str] | None = None) -> int:
     return 0
 
 
-__all__ = ["main", "check_database", "migrate", "seed", "redact"]
+def print_banner(args: argparse.Namespace) -> None:
+    """Report the effective mode, the URLs, and the API token state.
+
+    Split out of :func:`main` so it can be asserted without starting a server.
+    The token lines matter: Block 13 fails *closed*, so an operator who forgets
+    ``JOCKY_API_TOKEN`` gets a dashboard whose dispatch buttons refuse. Saying so
+    here is the difference between a five-second fix and a support ticket.
+    """
+    # The *effective* mode, not the flag: the collectors bind their mode from
+    # the environment, so a banner driven by the flag alone can disagree with
+    # what is actually being collected.
+    from jocky import config
+
+    mode = "sample" if config.SAMPLE_DATA else "live"
+    _say("")
+    _say(f"demo: mode={mode}")
+    _say(f"demo: dashboard  http://{args.host}:{args.port}/ui/")
+    _say(f"demo: openapi    http://{args.host}:{args.port}/docs")
+    _say(f"demo: health     http://{args.host}:{args.port}/health")
+
+    from jocky.server.auth import TOKEN_ENV
+
+    if os.environ.get(TOKEN_ENV):
+        _say(
+            f"demo: api token  set (${TOKEN_ENV}); "
+            "paste it into the dashboard's API token field"
+        )
+        return
+    mint = 'python -c "from jocky.server.auth import new_token; print(new_token())"'
+    _say("demo: api token  NOT set - POST /missions and POST /measures/run are locked (401)")
+    _say(f"      PowerShell: ${TOKEN_ENV} = {mint}")
+    _say(f"      sh:         export {TOKEN_ENV}=$({mint})")
+
+
+__all__ = ["main", "print_banner", "check_database", "migrate", "seed", "redact"]

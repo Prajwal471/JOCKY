@@ -376,3 +376,54 @@ def test_demo_main_prepares_without_serving(tmp_path, monkeypatch):
 
     assert bootstrap.main(["--no-serve"]) == 0
     assert db_file.exists()
+
+
+def _banner(monkeypatch, capsys, *, token):
+    from jocky.demo import bootstrap
+
+    if token is None:
+        monkeypatch.delenv(TOKEN_ENV, raising=False)
+    else:
+        monkeypatch.setenv(TOKEN_ENV, token)
+    import argparse
+
+    bootstrap.print_banner(argparse.Namespace(host="127.0.0.1", port=8000))
+    return capsys.readouterr().out
+
+
+def test_banner_says_the_mutating_routes_are_locked_without_a_token(monkeypatch, capsys):
+    """An unset token must be announced, not discovered by a failed button.
+
+    The demo fails closed, so an operator who forgets ``JOCKY_API_TOKEN`` gets a
+    dashboard that loads and then refuses. Without this line the first symptom is
+    a 401 in the browser, which reads like a bug rather than a missing variable.
+    """
+    out = _banner(monkeypatch, capsys, token=None)
+    assert "api token  NOT set" in out
+    assert "locked (401)" in out
+    # The remedy has to be copy-pasteable, and has to name the variable.
+    assert TOKEN_ENV in out
+    assert "new_token()" in out
+    assert "PowerShell" in out and "export" in out
+
+
+def test_banner_does_not_print_the_token_value(monkeypatch, capsys):
+    """The banner may say a token is set. It must never echo the secret."""
+    out = _banner(monkeypatch, capsys, token="super-secret-value")
+    assert "api token  set" in out
+    assert TOKEN_ENV in out
+    assert "super-secret-value" not in out
+
+
+def test_banner_reports_the_effective_mode(monkeypatch, capsys):
+    """The flag is not the truth; ``JOCKY_SAMPLE_DATA`` binds the collectors."""
+    from jocky import config
+
+    monkeypatch.setattr(config, "SAMPLE_DATA", False, raising=False)
+    monkeypatch.setenv(TOKEN_ENV, "t")
+    import argparse
+
+    from jocky.demo import bootstrap
+
+    bootstrap.print_banner(argparse.Namespace(host="127.0.0.1", port=8000))
+    assert "mode=live" in capsys.readouterr().out

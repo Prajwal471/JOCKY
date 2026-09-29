@@ -39,6 +39,7 @@ JOCKY cut check (sample): PASS
   [PASS] active-measures: 5 measures PASS over 27 observations, each stating a claim, a limit and its evidence
   [PASS] baseline-matrix: 7/7 baselines PASS, 7 rows recorded
   [PASS] interop-invariants: all 6 ok; signatures 12/12 verified
+  [PASS] auth: POST /missions and POST /measures/run refuse a missing, wrong and unset token, and accept a valid one
   [PASS] git: branch master, working tree clean
   cut is releasable
 ```
@@ -47,7 +48,21 @@ It exits non-zero and names the failing gate if any claim stops holding. Add
 `--with-tests` to include the pytest suite, `--live` to read the real host
 instead of sample data, and `--json` for machine-readable output.
 
+The `git` gate refuses an uncommitted tree, so run this *after* committing, or
+pass `--allow-dirty` while you are still working.
+
 ## 2. Bring up the demo
+
+**Set a token first.** The two routes that do work need it, and the demo fails
+closed: without `JOCKY_API_TOKEN` the dashboard loads but its dispatch buttons
+refuse. This has to be in the environment *before* the server starts.
+
+```sh
+# PowerShell:
+$env:JOCKY_API_TOKEN = python -c "from jocky.server.auth import new_token; print(new_token())"
+# sh:
+export JOCKY_API_TOKEN=$(python -c "from jocky.server.auth import new_token; print(new_token())")
+```
 
 **With PostgreSQL** (the deployment target):
 
@@ -69,13 +84,36 @@ demo: database sqlite:///./demo.db
 demo: migrating to head
 demo: seeded 11 coverage clauses
 demo: agent key ...\jocky\keys\agent_ed25519.pem
-demo: mode=live
+
+demo: mode=sample
 demo: dashboard  http://127.0.0.1:8000/ui/
+demo: openapi    http://127.0.0.1:8000/docs
+demo: health     http://127.0.0.1:8000/health
+demo: api token  set ($JOCKY_API_TOKEN); paste it into the dashboard's API token field
+```
+
+With the token unset the last three lines are replaced by this, and the two
+dispatch buttons in the dashboard will refuse:
+
+```
+demo: api token  NOT set - POST /missions and POST /measures/run are locked (401)
+      PowerShell: $JOCKY_API_TOKEN = python -c "from jocky.server.auth import new_token; print(new_token())"
+      sh:         export JOCKY_API_TOKEN=$(python -c "from jocky.server.auth import new_token; print(new_token())")
 ```
 
 `--sample` serves deterministic data instead of reading the host. The banner
 reports the *effective* mode, not the flag, because the collectors bind their
 mode at import time.
+
+If port 8000 is already taken, pass another one — the demo takes `--port` and
+every URL in the banner moves with it:
+
+```sh
+.venv/Scripts/python -m jocky.demo --sample --port 8010
+```
+
+`demo.db` is git-ignored, so following this path does not make the `git` gate in
+step 1 fail.
 
 ## 3. The five things worth showing
 
@@ -110,8 +148,7 @@ not persisted; that is deliberate, and no performance figure is claimed.
 ### 3.3 A mission produces a signed, chained evidence record
 
 ```sh
-$env:JOCKY_API_TOKEN = python -c "from jocky.server.auth import new_token; print(new_token())"   # before starting the server
-$body = @{ source = Get-Content examples/attack_surface.jky -Raw } | ConvertTo-Json
+$body = @{ source = [string](Get-Content examples/attack_surface.jky -Raw) } | ConvertTo-Json
 Invoke-RestMethod http://127.0.0.1:8000/missions -Method Post -Body $body -ContentType "application/json" -Headers @{ "X-JOCKY-Token" = $env:JOCKY_API_TOKEN }
 ```
 
@@ -180,10 +217,13 @@ and `defender:disable`. None of them is expressible in a mission, and the
 
 | Symptom | Cause | Fix |
 | --- | --- | --- |
+| `error while attempting to bind on address ... 10048` | Something already holds port 8000 | Re-run with `--port 8010`; use the URL from the banner |
 | `demo: cannot reach the database` | PostgreSQL is not running | Start the container, or set `JOCKY_DATABASE_URL` to a SQLite file |
 | `alembic upgrade head failed` | Stale database from an earlier block | Delete the demo database file and re-run; migrations are additive |
 | `active measures ...: ERROR` | A measure could not run | Read the `detail` field; it names the failing step |
 | Mission returns 400 | The source was refused | The `detail` names the capability or construct that was rejected |
+| Mission or measures returns 401 | No API token, or the wrong one | Set `JOCKY_API_TOKEN` before starting the server; see `docs/authentication.md` |
+| Dashboard says `set an API token first` | The token field is empty | Paste `JOCKY_API_TOKEN` into the **API token** field |
 | Dashboard loads but evidence is empty | No mission has run yet | Do step 3.3 first |
 | Collectors return nothing on Linux | Windows-only harvesters | Run on Windows, or use `--sample` |
 

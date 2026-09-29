@@ -48,6 +48,14 @@ docker run -d --name jocky-pg -e POSTGRES_PASSWORD=demo -e POSTGRES_USER=jocky \
 # -> http://127.0.0.1:8000/ui/
 ```
 
+The two dashboard buttons that dispatch work need an API token, so set one
+*before* starting the server (see [Authentication](#authentication)):
+
+```sh
+export JOCKY_API_TOKEN="$(python -c 'from jocky.server.auth import new_token; print(new_token())')"
+.venv/Scripts/python -m jocky.demo
+```
+
 `python -m jocky.demo` checks the database is reachable (failing with the exact
 URL rather than hanging), runs `alembic upgrade head`, seeds the coverage matrix,
 makes sure an agent key exists, and serves the dashboard. `--sample` serves

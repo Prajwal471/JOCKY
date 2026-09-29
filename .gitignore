@@ -12,6 +12,13 @@ migrations/versions/*.pyc
 .DS_Store
 *.jir
 *.sig
+# The zero-infrastructure demo path in docs/demo-runbook.md writes a SQLite
+# database into the working tree. Left untracked here rather than in the
+# runbook's instructions, because an untracked file makes the `git` cut gate
+# refuse -- a judge following the runbook would fail their own demo.
+*.db
+*.sqlite
+*.sqlite3
 jocky/keys/*.key
 jocky/keys/*.pem
 !jocky/keys/.gitkeep

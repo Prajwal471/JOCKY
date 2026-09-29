@@ -1,0 +1,30 @@
+# Bounded execution: loops that provably terminate.
+#
+# The "bound execution" property (docs/detection-definition.md §3) is not a
+# runtime watchdog bolted on afterwards -- it is a check in the front end. A
+# `while true` loop is rejected at parse time, so no mission can reach the
+# interpreter with an unbounded loop. This mission shows the accepted shape:
+# a loop with a counter that decreases on every iteration.
+#
+# Run this one with a deliberate error to see the bound refuse to run:
+#   `while true { };`
+
+@purpose "Walk a bounded snapshot of processes and summarise the walk."
+@requires(process:list, evidence:sign)
+mission "Bounded Process Review" {
+  fn bounded_walk(limit: int) -> int {
+    let procs = collect_processes();
+    let seen = procs |take 64;
+    let i = 0;
+
+    while i < limit {
+      i = i + 1;
+    }
+
+    emit seen "bounded slice of the process table";
+    return i;
+  }
+
+  let iterations = bounded_walk(64);
+  emit iterations "iterations performed";
+}

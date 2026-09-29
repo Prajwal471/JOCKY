@@ -1,0 +1,37 @@
+# Controlled observation experiment.
+#
+# `experiment` is the paper's second program form: where `mission` answers
+# "what should be collected", an `experiment` answers "what was measured, under
+# what declared conditions". The scope here is deliberately narrow and is the
+# same scope JOCKY claims everywhere else -- observe the analyst's own
+# read-only activity and record what the host's own event channels say about
+# it.
+#
+# This is an *observation* experiment. JOCKY does not implement, and this
+# repository does not contain, behaviour that manipulates or evades a security
+# control; the never-grant set (see jocky/dsl/types.py) makes those capabilities
+# unrepresentable in the language rather than merely discouraged.
+
+@purpose "Measure whether read-only collection surfaces in the host's own event channels."
+@requires(process:list, event:read, identity:probe, evidence:sign)
+experiment "Observation Surface" {
+  fn measure() -> int {
+    let before = read_events();
+    let snapshot = collect_processes();
+    let after = read_events();
+
+    let baseline = before |count;
+    let during = after |count;
+    let delta = during - baseline;
+
+    emit baseline "event records before collection";
+    emit snapshot |count "process records observed";
+    emit during "event records after collection";
+    emit delta "event records attributable to the collection window";
+
+    return delta;
+  }
+
+  let observed_delta = measure();
+  emit observed_delta "measured observation surface";
+}

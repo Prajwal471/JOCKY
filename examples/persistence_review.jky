@@ -1,0 +1,29 @@
+# Persistence and dual-use review.
+#
+# Correlates the three durable persistence surfaces (service, autostart,
+# registry Run keys) with the local presence of dual-use utilities, so that a
+# finding is a *correlation* of independent read-only observations rather than
+# a single collector's opinion.
+
+@purpose "Correlate services, autostart entries and dual-use binary presence."
+@requires(service:list, persistence:list, registry:query, lotl:scan, evidence:sign)
+mission "Persistence Review" {
+  fn correlate() -> int {
+    let services = list_services();
+    let autostarts = list_autostarts();
+    let dual_use = scan_lotl();
+
+    let running = services | (s => s.state == "running");
+    let autostart_hosts = autostarts |count;
+    let dual_use_present = dual_use |count;
+
+    emit running "services in a running state";
+    emit autostart_hosts "autostart entries";
+    emit dual_use_present "dual-use utilities present on this host";
+
+    return autostart_hosts;
+  }
+
+  let correlated = correlate();
+  emit correlated "persistence surfaces correlated";
+}

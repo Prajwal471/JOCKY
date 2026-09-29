@@ -1,14 +1,24 @@
 # JOCKY
 
 A forensic scripting language and framework for computer & network forensic
-analysis, designed so analysis runs without triggering security solutions.
+analysis, designed so that analysis is **read-only, least-privilege and
+independently defensible**: every observation is signed into a hash chain
+anchored to the mission, and every collector cites the same public API a
+reviewer would use to check it.
+
+JOCKY does not claim to be undetectable. Least privilege buys defensibility,
+not invisibility — see `docs/detection-definition.md` and
+`docs/gap-proof.md`.
 
 ## Stack
 
 - Python 3.13, Lark, Pydantic, FastAPI
-- `llvmlite==0.49.0` (LLVM IR generation + native execution)
-- PostgreSQL 16 + Alembic (SQLite in-memory for tests only)
+- PostgreSQL 16 + Alembic (SQLite supported for a zero-infrastructure demo)
 - Ed25519 signing (`cryptography`)
+
+`llvmlite==0.49.0` is declared as a dependency but is not yet imported: the
+compiler and code-generation layer is unbuilt. See
+`docs/implementation-status.md`.
 
 ## Quick start
 
@@ -64,19 +74,54 @@ Every measure carries a positive control, so a measure that refused everything
 cannot pass. They run in an isolated database with a throwaway agent key, and the
 API shells out to the CLI so a measure cannot disturb the live server.
 
+## Reproduce every claim
+
+```sh
+.venv/Scripts/python -m jocky.release --check
+```
+
+One command re-derives every result this repository documents: the shipped
+examples, the front-end refusals, the capability registry, the five active
+measures, the seven-baseline matrix, and the interop invariants. It exits
+non-zero and names the failing gate if any of them stops holding. `--live`
+reads the real host, `--with-tests` adds the pytest suite, `--json` is for
+tools. Details in `docs/cut-flow.md`.
+
+## Status and limits
+
+`docs/implementation-status.md` maps each claim in
+`JOCKY_Final_Research_Paper-1.pdf` to what this repository actually implements,
+including what is **absent**: no LLVM code generation, no program-transformation
+engine, no authentication, no Linux backend, no provisioned lab, and no
+latency, detection-rate, false-positive or portability figures. Those are not
+oversights to be discovered during a demo; they are recorded.
+
+## Docs
+
+| Document | Contents |
+| --- | --- |
+| `docs/implementation-status.md` | claim-to-evidence matrix against the paper |
+| `docs/demo-runbook.md` | judge-facing runbook, with recovery steps |
+| `docs/cut-flow.md` | release cut gates and tagging procedure |
+| `docs/detection-definition.md` | what "detection" means here, and the four claimed properties |
+| `docs/gap-proof.md` | the contested-space capability-gap argument |
+| `docs/equivalence-proofs.md` | proofs P1-P5 and their boundaries |
+| `docs/eval-harness.md` | baseline matrix protocol and limitations |
+| `docs/active-measures.md` | the five counterfactual measures |
+
 ## Layout
 
 ```
 jocky/
   dsl/       lexer, parser, AST, JIR
-  compiler/  LLVM codegen + passes
-  runtime/   collectors (ctypes Windows, /proc Linux)
+  runtime/   collectors (ctypes Windows; non-Windows degrades to empty)
   server/    FastAPI, ORM, evidence chain, interop metrics, static dashboard
   eval/      equivalence proofs, baseline matrix, evaluation harness, active measures
   demo/      one-command demo environment
   crypto/    Ed25519 signing
-examples/    *.jky missions
-lab/         VM provisioning
+  release.py cut gates
+examples/    *.jky missions (five, all verified by the cut gates)
+lab/         not provisioned - the paper's isolated-VM testbed is unbuilt
 tests/
 ```
 
@@ -84,3 +129,6 @@ tests/
 
 - One git commit per build block; test suite stays green.
 - Demo must not require elevation. Collectors report `least_privilege` provenance.
+- No number ships without the command that produces it, and no performance,
+  detection-rate or portability figure ships at all until a lab can measure it.
+- `python -m jocky.release --check` must pass before a cut. See `docs/cut-flow.md`.

@@ -1,0 +1,30 @@
+# Attack surface: the broad read-only collection mission.
+#
+# Every call here is a read-only collector running under the caller's own
+# non-privileged token. Nothing in this mission writes to the inspected host.
+# The `privileges: "none"` provenance on each emitted record is what the
+# "least-privilege by default" property (docs/detection-definition.md §1) rests
+# on, and it is recorded in the evidence chain rather than asserted here.
+
+@purpose "Enumerate the process, network, service, driver and persistence surface of a host."
+@requires(process:list, network:analyze, service:list, driver:list, persistence:list, evidence:sign)
+mission "Attack Surface" {
+  fn tally() -> int {
+    let procs = collect_processes();
+    let conns = analyze_network_connections();
+    let svcs = list_services();
+    let drv = list_drivers();
+    let start = list_autostarts();
+
+    emit procs |count "process records";
+    emit conns |count "network connections";
+    emit svcs |count "services";
+    emit drv |count "drivers";
+    emit start |count "autostart entries";
+
+    return procs |count;
+  }
+
+  let observed = tally();
+  emit observed "total process records observed";
+}

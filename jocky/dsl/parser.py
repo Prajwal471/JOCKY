@@ -14,6 +14,7 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from lark import Lark, ParseError, Token, Transformer, Tree
+from lark.exceptions import VisitError
 
 from jocky.dsl.ast import (
     AssertStmt,
@@ -447,7 +448,13 @@ class _Builder(Transformer):
 
     def pipe_take(self, children):
         tok = children[-1]
-        return PipeOp(op="take", arg=int(str(tok)))
+        try:
+            count = int(str(tok))
+        except ValueError:
+            raise JockySyntaxError(
+                f"|take expects an integer literal, got '{tok}'"
+            ) from None
+        return PipeOp(op="take", arg=count)
 
     def pipe_dedupe(self, children):
         return PipeOp(op="dedupe")
@@ -640,7 +647,18 @@ def parse(source: str) -> Program:
         tree: Tree = _PARSER.parse(source)
     except ParseError as exc:
         raise JockySyntaxError(str(exc)) from exc
-    prog = _Builder().transform(tree)
+    try:
+        prog = _Builder().transform(tree)
+    except VisitError as exc:
+        # A refusal raised by the builder ("while true is prohibited") reaches
+        # us wrapped in lark's VisitError. Unwrap it so callers see the front
+        # end's own error type. Anything that is *not* a JockySyntaxError is a
+        # genuine defect, so it is re-raised as-is rather than disguised as a
+        # syntax error.
+        orig = getattr(exc, "orig_exc", exc)
+        if isinstance(orig, JockySyntaxError):
+            raise orig from exc
+        raise
     from jocky.dsl.checker import validate
 
     return validate(prog)

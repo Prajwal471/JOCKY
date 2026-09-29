@@ -1,0 +1,27 @@
+# Self-assertive probes: how a mission evidences that it needs no elevation.
+#
+# The three probes answer "what identity am I running as, and what can I read
+# without administrator rights?" They are the runtime counterpart of the
+# read-only-by-construction property (docs/detection-definition.md §2): a
+# probe result is a `finding_type: "probe"` record in the same signed evidence
+# chain as any other observation, so a reviewer can tell that JOCKY asserted
+# nothing it did not also observe.
+
+@purpose "Report the effective identity and read a named service and registry key without elevation."
+@requires(identity:probe, service:probe, registry:query, evidence:sign)
+mission "Least-Privilege Probes" {
+  fn attest() -> int {
+    let me = probe_identity();
+    let svc = probe_service("Spooler");
+    let key = probe_registry("HKLM\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Run");
+
+    emit me "effective principal and privilege state";
+    emit svc "service config readable without elevation";
+    emit key "autostart key readable without elevation";
+
+    return 3;
+  }
+
+  let probes = attest();
+  emit probes "probes executed under the caller token";
+}

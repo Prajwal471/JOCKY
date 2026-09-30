@@ -325,7 +325,7 @@ function runAllButton() {
 document.addEventListener("click", async (ev) => {
   const btn = ev.target.closest("button");
   if (!btn) return;
-  if (btn.id === "run-all") { await runAll(["all-measures"]); return; }
+  if (btn.id === "run-all") { await runAll(null); return; }
   const one = btn.getAttribute("data-run");
   if (one) await runAll([one]);
 });
@@ -339,15 +339,17 @@ async function runAll(ids) {
     const res = await fetch("/measures/run", {
       method: "POST",
       headers: Object.assign({ "Content-Type": "application/json" }, authHeaders()),
-      body: JSON.stringify({ measure_ids: ids === ["all-measures"] ? null : ids }),
+      body: JSON.stringify({ measure_ids: ids }),
     });
     if (res.status === 401) throw new Error("unauthenticated - set an API token above");
     if (!res.ok) throw new Error("HTTP " + res.status);
     const report = await res.json();
-    (report.measures || []).forEach(renderMeasure);
+    const results = report.measures || [];
+    if (!results.length) throw new Error("no measures ran — nothing to report");
+    results.forEach(renderMeasure);
     if (note) {
-      const p = (report.measures || []).filter((m) => m.verdict === "PASS").length;
-      note.textContent = report.verdict + " — " + p + "/" + report.measures.length + " passed (" + report.mode + " mode)";
+      const p = results.filter((m) => m.verdict === "PASS").length;
+      note.textContent = report.verdict + " — " + p + "/" + results.length + " passed (" + report.mode + " mode)";
     }
   } catch (e) {
     if (note) { note.textContent = e.message; note.className = "err"; }
